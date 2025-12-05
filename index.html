@@ -2,15 +2,15 @@
 <html lang="ja">
 <head>
   <meta charset="UTF-8" />
-  <title>ロット番号 カメラ読み取り実験</title>
+  <title>バーコード読取＆読み上げ（実験）</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <meta
     name="description"
-    content="スマホのカメラを使ってロット番号らしき文字をOCRし、画面表示と音声読み上げを行う実験用ツールです。"
+    content="スマホのカメラでバーコードを読み取り、その値を画面表示と音声で読み上げる実験用ツールです。"
   />
 
-  <!-- Tesseract.js（CDN） -->
-  <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+  <!-- Quagga2（バーコード読取ライブラリ） -->
+  <script src="https://unpkg.com/@ericblade/quagga2@1.11.0/dist/quagga.min.js"></script>
 
   <style>
     :root {
@@ -76,69 +76,73 @@
       border-bottom: 1px solid var(--border-soft);
     }
 
-    .video-wrap {
+    /* カメラ表示エリア */
+    #barcodeContainer {
       position: relative;
+      width: 100%;
+      aspect-ratio: 3 / 4;
+      background: #000;
       border-radius: 12px;
       overflow: hidden;
-      border: 1px solid var(--border-soft);
-      background: #000;
-      aspect-ratio: 3 / 4;
     }
 
-    video {
-      width: 100%;
-      height: 100%;
-      object-fit: cover;
-    }
-
-    .overlay-frame {
+    /* 認識エリアの目安枠（Quaggaが上に canvas を重ねる） */
+    .scan-guide {
       position: absolute;
-      left: 50%;
-      top: 50%;
-      width: 70%;
-      height: 18%;
-      transform: translate(-50%, -50%);
+      top: 40%;
+      left: 10%;
+      width: 80%;
+      height: 20%;
       border: 2px solid var(--accent);
       border-radius: 10px;
-      box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.45);
+      pointer-events: none;
+      box-shadow: 0 0 0 9999px rgba(0,0,0,0.4);
     }
 
-    .overlay-text {
+    .scan-text {
       position: absolute;
-      left: 50%;
       top: 8%;
+      left: 50%;
       transform: translateX(-50%);
       font-size: 0.75rem;
       color: var(--text-sub);
       background: rgba(15, 23, 42, 0.7);
       padding: 4px 8px;
       border-radius: 999px;
+      pointer-events: none;
     }
 
     .action {
       margin-top: 10px;
-      text-align: center;
+      display: flex;
+      gap: 8px;
     }
 
     .action button {
-      width: 100%;
+      flex: 1;
       padding: 10px 12px;
       border-radius: 999px;
       border: none;
-      font-size: 0.95rem;
+      font-size: 0.9rem;
       font-weight: 600;
       letter-spacing: 0.04em;
       color: #0b1120;
       background: var(--accent);
       cursor: pointer;
-      box-shadow: 0 10px 20px rgba(22, 163, 74, 0.4);
+      box-shadow: 0 8px 16px rgba(22, 163, 74, 0.5);
       transition: transform 0.08s ease, box-shadow 0.08s ease,
-        opacity 0.1s ease;
+        opacity 0.1s ease, background 0.1s ease;
+    }
+
+    .action button.secondary {
+      background: #334155;
+      color: #e5e7eb;
+      box-shadow: 0 6px 12px rgba(15, 23, 42, 0.6);
     }
 
     .action button:active {
       transform: translateY(1px);
-      box-shadow: 0 6px 14px rgba(22, 163, 74, 0.3);
+      box-shadow: 0 4px 10px rgba(15, 23, 42, 0.5);
       opacity: 0.95;
     }
 
@@ -154,7 +158,7 @@
     }
 
     .result-line {
-      font-size: 0.9rem;
+      font-size: 0.95rem;
       margin: 4px 0;
     }
 
@@ -163,22 +167,11 @@
       color: var(--text-sub);
     }
 
-    .lot-candidate {
-      font-size: 1rem;
-      font-weight: 600;
-      letter-spacing: 0.08em;
-    }
-
-    .raw-text {
-      font-size: 0.75rem;
-      color: var(--text-sub);
-      white-space: pre-wrap;
-      word-break: break-all;
-      max-height: 6em;
-      overflow: auto;
-      border-top: 1px solid var(--border-soft);
-      margin-top: 6px;
-      padding-top: 4px;
+    .code-value {
+      font-size: 1.1rem;
+      font-weight: 700;
+      letter-spacing: 0.1em;
+      margin-top: 2px;
     }
 
     .note {
@@ -186,34 +179,30 @@
       color: var(--text-sub);
       margin-top: 4px;
     }
-
-    canvas {
-      display: none;
-    }
   </style>
 </head>
 <body>
   <div class="app">
     <header class="app-header">
-      <h1>ロット番号 カメラ読み取り（実験）</h1>
-      <p class="app-subtitle">枠内にロット印字を合わせて読み取り・読み上げ</p>
+      <h1>バーコード読取＆読み上げ</h1>
+      <p class="app-subtitle">商品にかざしてコードを読み取り、音声で読み上げ</p>
     </header>
 
     <!-- カメラ -->
     <section class="card">
       <h2>カメラプレビュー</h2>
-      <div class="video-wrap">
-        <video id="preview" autoplay playsinline></video>
-        <div class="overlay-frame"></div>
-        <div class="overlay-text">ロット印字をこの枠に合わせる</div>
+      <div id="barcodeContainer">
+        <div class="scan-guide"></div>
+        <div class="scan-text">バーコードを横向きでこの枠に合わせる</div>
       </div>
       <div class="action">
-        <button id="captureBtn">この範囲を読み取る</button>
-        <div id="status" class="status"></div>
+        <button id="startBtn">読み取り開始</button>
+        <button id="stopBtn" class="secondary">停止</button>
       </div>
+      <div id="status" class="status"></div>
       <p class="note">
-        ※ 明るい場所で、ロットの文字がはっきり見える距離まで近づけてください。<br>
-        ※ 精度はパッケージや照明条件に大きく左右されます。
+        ※ スマホの背面カメラを使用します。明るい場所で、バーコードを横向きに枠内へ。<br>
+        ※ 主に JAN/EAN 系など一般的なバーコードに対応しています。
       </p>
     </section>
 
@@ -221,75 +210,39 @@
     <section class="card">
       <h2>読み取り結果</h2>
       <div class="result-line">
-        <div class="result-label">ロット候補</div>
-        <div id="lotCandidate" class="lot-candidate">未読み取り</div>
-      </div>
-      <div class="result-line">
-        <div class="result-label">生テキスト（参考）</div>
-        <div id="rawText" class="raw-text">-</div>
+        <div class="result-label">コード</div>
+        <div id="codeValue" class="code-value">未読み取り</div>
       </div>
       <p class="note">
-        認識した文字列のうち、数字が多く含まれる行を「ロット候補」として表示・読み上げています。
+        読み取りに成功すると、ここにコードが表示され、同時に音声で読み上げます。<br>
+        ロット番号として扱う場合は、この値をそのまま控える／他のフォームに貼り付けて使えます。
       </p>
     </section>
   </div>
 
-  <!-- OCR用キャンバス -->
-  <canvas id="captureCanvas"></canvas>
-
   <script>
-    const video = document.getElementById("preview");
-    const captureBtn = document.getElementById("captureBtn");
     const statusEl = document.getElementById("status");
-    const lotCandidateEl = document.getElementById("lotCandidate");
-    const rawTextEl = document.getElementById("rawText");
-    const canvas = document.getElementById("captureCanvas");
-    let stream = null;
-    let isRecognizing = false;
+    const codeEl = document.getElementById("codeValue");
+    const startBtn = document.getElementById("startBtn");
+    const stopBtn = document.getElementById("stopBtn");
+    const container = document.getElementById("barcodeContainer");
 
-    // カメラ起動
-    async function startCamera() {
-      try {
-        stream = await navigator.mediaDevices.getUserMedia({
-          video: { facingMode: { ideal: "environment" } },
-          audio: false
-        });
-        video.srcObject = stream;
-        statusEl.textContent = "カメラ準備完了。枠内にロットを合わせてください。";
-      } catch (err) {
-        statusEl.textContent = "カメラが利用できません：" + err.message;
+    let isRunning = false;
+    let lastCode = "";
+    let lastSpokenAt = 0;
+
+    function setStatus(msg, isError = false) {
+      statusEl.textContent = msg;
+      if (isError) {
         statusEl.classList.add("status-error");
+      } else {
+        statusEl.classList.remove("status-error");
       }
     }
 
-    // 行ごとの中から「数字が多い行」をロット候補として選ぶ
-    function pickLotCandidate(text) {
-      const lines = text
-        .split(/\r?\n/)
-        .map(l => l.trim())
-        .filter(l => l.length > 0);
-
-      if (lines.length === 0) return "";
-
-      let bestLine = "";
-      let bestScore = -1;
-
-      for (const line of lines) {
-        const digits = (line.match(/[0-9]/g) || []).length;
-        const score = digits; // とりあえず「数字の数」で評価
-        if (score > bestScore) {
-          bestScore = score;
-          bestLine = line;
-        }
-      }
-      return bestLine;
-    }
-
-    // 読み上げ
     function speak(text) {
       if (!("speechSynthesis" in window)) {
-        statusEl.textContent = "音声読み上げ非対応のブラウザです。";
-        statusEl.classList.add("status-error");
+        setStatus("音声読み上げに対応していないブラウザです。", true);
         return;
       }
       const utter = new SpeechSynthesisUtterance(text);
@@ -298,74 +251,96 @@
       window.speechSynthesis.speak(utter);
     }
 
-    captureBtn.addEventListener("click", async () => {
-      if (!video.videoWidth || !video.videoHeight) {
-        statusEl.textContent = "カメラの準備中です。少し待ってから再度お試しください。";
+    function startScanner() {
+      if (isRunning) return;
+
+      // Quagga 初期化
+      Quagga.init(
+        {
+          inputStream: {
+            type: "LiveStream",
+            target: container,
+            constraints: {
+              facingMode: "environment"
+            },
+            area: { // 認識エリアの割合（中央寄せ）
+              top: "30%",
+              right: "10%",
+              left: "10%",
+              bottom: "30%"
+            }
+          },
+          decoder: {
+            readers: [
+              "ean_reader",
+              "ean_8_reader",
+              "code_128_reader",
+              "code_39_reader",
+              "upc_reader",
+              "upc_e_reader"
+            ]
+          },
+          locate: true
+        },
+        function(err) {
+          if (err) {
+            console.error(err);
+            setStatus("初期化エラー: " + err.message, true);
+            return;
+          }
+          Quagga.start();
+          isRunning = true;
+          setStatus("読み取り中… バーコードを枠内に合わせてください。");
+        }
+      );
+
+      // 認識成功時
+      Quagga.onDetected(onDetected);
+    }
+
+    function stopScanner() {
+      if (!isRunning) return;
+      Quagga.offDetected(onDetected);
+      Quagga.stop();
+      isRunning = false;
+      setStatus("停止しました。再開するには『読み取り開始』を押してください。");
+    }
+
+    function onDetected(result) {
+      if (!result || !result.codeResult || !result.codeResult.code) return;
+
+      const code = result.codeResult.code;
+      const now = Date.now();
+
+      // 同じコードを連続で何回も読み上げないよう、少し間引く
+      if (code === lastCode && now - lastSpokenAt < 1500) {
         return;
       }
-      if (isRecognizing) return;
-      isRecognizing = true;
-      statusEl.textContent = "画像をキャプチャして解析中…";
 
-      // キャンバスに描画（中央の枠部分だけ切り出したい）
-      const vw = video.videoWidth;
-      const vh = video.videoHeight;
+      lastCode = code;
+      lastSpokenAt = now;
 
-      canvas.width = vw;
-      canvas.height = vh;
-      const ctx = canvas.getContext("2d");
-      ctx.drawImage(video, 0, 0, vw, vh);
+      codeEl.textContent = code;
+      setStatus("読み取り成功：" + code);
 
-      // 枠の位置：video全体を基準に中央を切り取る
-      const cropWidth = vw * 0.7;
-      const cropHeight = vh * 0.18;
-      const cropX = (vw - cropWidth) / 2;
-      const cropY = (vh - cropHeight) / 2;
+      // 読み上げ：数字をそのまま読んでくれる
+      speak(`バーコード、${code}`);
+    }
 
-      const cropCanvas = document.createElement("canvas");
-      cropCanvas.width = cropWidth;
-      cropCanvas.height = cropHeight;
-      const cropCtx = cropCanvas.getContext("2d");
-      cropCtx.drawImage(canvas, cropX, cropY, cropWidth, cropHeight, 0, 0, cropWidth, cropHeight);
-
-      try {
-        const { data: { text } } = await Tesseract.recognize(
-          cropCanvas,
-          "eng", // 数字・英字がメインなら英語でOK
-          { logger: m => console.log(m) }
-        );
-
-        const cleanedText = text.trim();
-        rawTextEl.textContent = cleanedText || "(認識結果なし)";
-
-        const candidate = pickLotCandidate(cleanedText);
-        if (candidate) {
-          lotCandidateEl.textContent = candidate;
-          statusEl.textContent = "ロット候補を読み取りました。";
-          statusEl.classList.remove("status-error");
-          speak(`ロット候補、${candidate}。`);
-        } else {
-          lotCandidateEl.textContent = "候補なし";
-          statusEl.textContent = "文字は認識しましたが、ロットらしい行が見つかりませんでした。";
-          statusEl.classList.add("status-error");
-          speak("ロットらしい文字がうまく読み取れませんでした。");
-        }
-      } catch (err) {
-        console.error(err);
-        statusEl.textContent = "OCR中にエラーが発生しました：" + err.message;
-        statusEl.classList.add("status-error");
-      } finally {
-        isRecognizing = false;
-      }
+    startBtn.addEventListener("click", () => {
+      startScanner();
     });
 
-    // ページ読み込み時にカメラ開始
-    if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
-      startCamera();
-    } else {
-      statusEl.textContent = "この端末ではカメラAPIが利用できません。";
-      statusEl.classList.add("status-error");
-    }
+    stopBtn.addEventListener("click", () => {
+      stopScanner();
+    });
+
+    // ページ離脱時にカメラ停止
+    window.addEventListener("beforeunload", () => {
+      if (isRunning) {
+        stopScanner();
+      }
+    });
   </script>
 </body>
 </html>
