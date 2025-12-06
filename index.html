@@ -2,10 +2,11 @@
 <html lang="ja">
 <head>
   <meta charset="UTF-8" />
-  <title>賞味期限 OCR ルーペ</title>
+  <title>賞味期限・ロット ライブOCRルーペ</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <meta name="description" content="賞味期限印字をスマホで拡大表示し、OCRで候補を読み上げる支援ツール。" />
+  <meta name="description" content="枠内の賞味期限・ロット印字をライブOCRし、候補を大きく表示＆読み上げする現場用ルーペ。" />
 
+  <!-- Tesseract.js -->
   <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
 
   <style>
@@ -14,7 +15,7 @@
       --card-bg: #0f172a;
       --accent: #22c55e;
       --accent2: #eab308;
-      --text-main: #f1f5f9;
+      --text-main: #f9fafb;
       --text-sub: #9ca3af;
       --error: #f97316;
       --radius-lg: 18px;
@@ -25,7 +26,7 @@
     body {
       margin: 0;
       padding: 14px;
-      font-family: system-ui, sans-serif;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
       background: radial-gradient(circle at top, #020617, #000 60%);
       color: var(--text-main);
     }
@@ -37,7 +38,7 @@
       padding: 16px 14px;
       margin-top: 14px;
       box-shadow: var(--shadow-soft);
-      border: 1px solid rgba(148,163,184,0.15);
+      border: 1px solid rgba(148,163,184,0.18);
     }
     .card h2 {
       margin: 0 0 10px;
@@ -49,25 +50,26 @@
     .camera-wrap {
       position: relative;
       width: 100%;
-      aspect-ratio: 3/4;
+      aspect-ratio: 3 / 4;
       background: #000;
       border-radius: 14px;
       overflow: hidden;
     }
     video {
-      width: 100%; height: 100%;
+      width: 100%;
+      height: 100%;
       object-fit: cover;
     }
 
-    /* ★大きくした読み取り枠 */
-    .guide-expiry {
+    /* 読み取り枠（大きめ） */
+    .guide-box {
       position: absolute;
-      top: 42%;
-      left: 7%;
-      width: 86%;
-      height: 32%; /* 拡大 */
+      top: 40%;
+      left: 6%;
+      width: 88%;
+      height: 34%;
       border: 3px solid var(--accent2);
-      border-radius: 14px;
+      border-radius: 16px;
       pointer-events: none;
       box-shadow: 0 0 0 9999px rgba(0,0,0,0.25);
     }
@@ -78,67 +80,89 @@
       transform: translateX(-50%);
       font-size: 0.8rem;
       color: var(--text-sub);
-      background: rgba(15,23,42,0.85);
-      padding: 4px 10px;
+      background: rgba(15,23,42,0.9);
+      padding: 4px 12px;
       border-radius: 999px;
     }
 
     .action-row {
       margin-top: 12px;
       display: flex;
+      gap: 8px;
     }
     button {
-      width: 100%;
-      padding: 14px;
-      border: none;
+      flex: 1;
+      padding: 12px;
       border-radius: 999px;
+      border: none;
+      font-size: 0.9rem;
       font-weight: 700;
+      cursor: pointer;
       background: var(--accent);
       color: #0b1120;
-      cursor: pointer;
-      box-shadow: 0 8px 20px rgba(34,197,94,0.45);
-      transition: .08s;
-      font-size: 1rem;
+      box-shadow: 0 8px 18px rgba(34,197,94,0.45);
+      transition: 0.08s;
+    }
+    button.secondary {
+      background: #334155;
+      color: #e5e7eb;
+      box-shadow: 0 6px 14px rgba(15,23,42,0.7);
     }
     button:active {
       transform: translateY(2px);
       opacity: 0.95;
+      box-shadow: 0 4px 10px rgba(0,0,0,0.5);
     }
 
     .status {
+      margin-top: 8px;
       font-size: 0.8rem;
       color: var(--text-sub);
-      margin-top: 8px;
-      min-height: 20px;
+      min-height: 1.3em;
     }
     .status-error { color: var(--error); }
 
     .result-label {
-      font-size: 0.85rem;
+      font-size: 0.8rem;
       color: var(--text-sub);
       margin-top: 4px;
     }
 
-    /* ★賞味期限の数字を大きくドーン */
+    /* 賞味期限（主役） */
     .expiry-value {
       font-size: 2.4rem;
       font-weight: 900;
-      letter-spacing: 0.15em;
+      letter-spacing: 0.16em;
       text-align: center;
-      margin: 14px 0;
-      padding: 14px;
-      background: rgba(255,255,255,0.06);
+      margin: 10px 0;
+      padding: 14px 8px;
       border-radius: 16px;
       border: 3px solid var(--accent2);
+      background: rgba(255,255,255,0.06);
       color: #fffbe6;
     }
 
-    /* 生テキスト */
+    /* ロット番号（サブだが大きめ） */
+    .lot-value {
+      font-size: 1.6rem;
+      font-weight: 800;
+      letter-spacing: 0.12em;
+      text-align: center;
+      margin: 8px 0;
+      padding: 10px 8px;
+      border-radius: 14px;
+      border: 2px solid #38bdf8;
+      background: rgba(15,23,42,0.9);
+      color: #e0f2fe;
+      word-break: break-all;
+    }
+
     .raw-text {
-      font-size: 0.85rem;
+      font-size: 0.8rem;
       color: var(--text-sub);
       white-space: pre-wrap;
       word-break: break-all;
+      margin-top: 6px;
       padding-top: 6px;
       border-top: 1px solid #1e293b;
       max-height: 6em;
@@ -148,154 +172,29 @@
     canvas { display: none; }
   </style>
 </head>
-
 <body>
   <div class="app">
 
     <section class="card">
-      <h2>賞味期限印字を合わせる</h2>
+      <h2>カメラプレビュー</h2>
       <div class="camera-wrap">
         <video id="preview" autoplay playsinline></video>
-        <div class="guide-expiry"></div>
-        <div class="guide-text">ここに賞味期限を合わせてください</div>
+        <div class="guide-box"></div>
+        <div class="guide-text">賞味期限とロット印字をこの枠にまとめて入れる</div>
       </div>
 
       <div class="action-row">
-        <button id="ocrBtn">賞味期限を読み取る</button>
+        <button id="toggleLiveBtn">ライブOCR：停止中</button>
+        <button id="shotBtn" class="secondary">この瞬間だけ再解析</button>
       </div>
-
       <div id="status" class="status"></div>
     </section>
 
     <section class="card">
       <h2>読み取り結果</h2>
-      <div class="result-label">賞味期限候補</div>
+
+      <div class="result-label">賞味期限候補（安定したら確定）</div>
       <div id="expiryValue" class="expiry-value">未読み取り</div>
 
-      <div class="result-label">認識データ（参考）</div>
-      <div id="rawText" class="raw-text">-</div>
-    </section>
-
-  </div>
-
-  <!-- OCR用キャンバス -->
-  <canvas id="captureCanvas"></canvas>
-
-  <script>
-    const video = document.getElementById("preview");
-    const ocrBtn = document.getElementById("ocrBtn");
-    const statusEl = document.getElementById("status");
-    const expiryEl = document.getElementById("expiryValue");
-    const rawTextEl = document.getElementById("rawText");
-    const captureCanvas = document.getElementById("captureCanvas");
-
-    let stream = null;
-    let isRecognizing = false;
-
-    function setStatus(msg, err=false){
-      statusEl.textContent = msg;
-      statusEl.classList.toggle("status-error", err);
-    }
-
-    function speakExpiry(str){
-      if(!window.speechSynthesis) return;
-      const map = {"0":"ゼロ","1":"イチ","2":"ニ","3":"サン","4":"ヨン","5":"ゴ","6":"ロク","7":"ナナ","8":"ハチ","9":"キュウ"};
-      const digitsOnly = str.replace(/[^0-9]/g,"");
-      const speech = digitsOnly.split("").map(c => map[c]||c).join(" ");
-      const u = new SpeechSynthesisUtterance(`賞味期限、${speech}`);
-      u.lang = "ja-JP";
-      window.speechSynthesis.cancel();
-      window.speechSynthesis.speak(u);
-    }
-
-    async function startCamera(){
-      try{
-        stream = await navigator.mediaDevices.getUserMedia({
-          video:{facingMode:"environment", width:{ideal:1920}, height:{ideal:1080}}
-        });
-        video.srcObject = stream;
-        setStatus("枠に賞味期限を合わせてください");
-      }catch(e){
-        setStatus("カメラが使用できません: "+e.message, true);
-      }
-    }
-
-    function preprocess(ctx,w,h){
-      const img = ctx.getImageData(0,0,w,h);
-      const d = img.data;
-      const thr = 160;
-      for(let i=0;i<d.length;i+=4){
-        const v = 0.3*d[i]+0.59*d[i+1]+0.11*d[i+2];
-        const b = v < thr ? 0 : 255;
-        d[i]=d[i+1]=d[i+2]=b;
-      }
-      ctx.putImageData(img,0,0);
-    }
-
-    function extractExpiry(text){
-      const rules=[
-        /\b(\d{4}[.\-/]\d{1,2}[.\-/]\d{1,2})\b/,
-        /\b(\d{2}[.\-/]\d{1,2}[.\-/]\d{1,2})\b/,
-        /\b(\d{4}[.\-/]\d{1,2})\b/,
-        /\b(\d{2}[.\-/]\d{1,2})\b/
-      ];
-      const lines=text.split(/\r?\n/).map(x=>x.trim()).filter(Boolean);
-      for(const l of lines){
-        for(const r of rules){
-          const m=l.match(r);
-          if(m) return m[1];
-        }
-      }
-      return "";
-    }
-
-    async function runOCR(){
-      if(!video.videoWidth) return setStatus("カメラ準備中…",true);
-      if(isRecognizing) return;
-
-      isRecognizing = true;
-      setStatus("解析中…");
-
-      const vw=video.videoWidth, vh=video.videoHeight;
-      captureCanvas.width=vw;
-      captureCanvas.height=vh;
-      const ctx=captureCanvas.getContext("2d");
-      ctx.drawImage(video,0,0,vw,vh);
-
-      const W=vw*0.86, H=vh*0.32;
-      const X=vw*0.07, Y=vh*0.42;
-
-      const scale=2;
-      const c=document.createElement("canvas");
-      c.width=W*scale; c.height=H*scale;
-      const c2=c.getContext("2d");
-      c2.drawImage(captureCanvas,X,Y,W,H,0,0,W*scale,H*scale);
-      preprocess(c2,c.width,c.height);
-
-      try{
-        const {data:{text}} = await Tesseract.recognize(c,"eng",{tessedit_char_whitelist:"0123456789.-/"});
-        rawTextEl.textContent=text.trim()||"(なし)";
-        const ex=extractExpiry(text);
-        if(ex){
-          expiryEl.textContent=ex;
-          expiryEl.style.borderColor="#22c55e";
-          speakExpiry(ex);
-          setStatus("候補検出");
-        }else{
-          expiryEl.textContent="候補なし";
-          expiryEl.style.borderColor="var(--error)";
-          setStatus("日付として認識できませんでした", true);
-        }
-      }catch(e){
-        setStatus("エラー: "+e.message,true);
-      }
-      isRecognizing=false;
-    }
-
-    ocrBtn.onclick=runOCR;
-    startCamera();
-
-    window.onbeforeunload=()=>stream?.getTracks().forEach(t=>t.stop());
-  </script>
-</body>
-</html>
+      <div class="result-label">ロット番号候補</div>
+      <div id="lotValue" class="lot-value">
