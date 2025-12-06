@@ -4,61 +4,95 @@
   <meta charset="UTF-8" />
   <title>賞味期限・ロット ライブOCRルーペ</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <meta name="description" content="枠内の賞味期限・ロット印字をライブOCRし、候補を大きく表示＆読み上げする現場用ルーペ。" />
+  <meta name="description" content="スマホカメラで賞味期限・ロット印字をライブOCRし、大きく表示＆読み上げするツール。" />
 
   <!-- Tesseract.js -->
   <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
 
   <style>
     :root {
-      --bg: #020617;
-      --card-bg: #0f172a;
-      --accent: #22c55e;
-      --accent2: #eab308;
-      --text-main: #f9fafb;
-      --text-sub: #9ca3af;
-      --error: #f97316;
-      --radius-lg: 18px;
-      --shadow-soft: 0 10px 25px rgba(0,0,0,0.6);
+      --bg: #f3f4f6;
+      --card-bg: #ffffff;
+      --accent: #0ea5e9;
+      --accent-soft: #e0f2fe;
+      --accent-secondary: #22c55e;
+      --accent-lot: #6366f1;
+      --text-main: #111827;
+      --text-sub: #6b7280;
+      --error: #ef4444;
+      --radius-lg: 16px;
+      --shadow-soft: 0 8px 20px rgba(15, 23, 42, 0.12);
     }
     * { box-sizing: border-box; }
 
     body {
       margin: 0;
-      padding: 14px;
+      padding: 12px;
       font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-      background: radial-gradient(circle at top, #020617, #000 60%);
+      background: var(--bg);
       color: var(--text-main);
     }
-    .app { max-width: 540px; margin: 0 auto; }
+
+    .app {
+      max-width: 540px;
+      margin: 0 auto;
+    }
+
+    .app-header {
+      padding: 4px 4px 8px;
+    }
+    .app-header h1 {
+      margin: 0;
+      font-size: 1.2rem;
+      font-weight: 700;
+    }
+    .app-header p {
+      margin: 2px 0 0;
+      font-size: 0.8rem;
+      color: var(--text-sub);
+    }
 
     .card {
       background: var(--card-bg);
       border-radius: var(--radius-lg);
-      padding: 16px 14px;
-      margin-top: 14px;
+      padding: 14px 12px;
+      margin-top: 10px;
       box-shadow: var(--shadow-soft);
-      border: 1px solid rgba(148,163,184,0.18);
+      border: 1px solid #e5e7eb;
     }
     .card h2 {
-      margin: 0 0 10px;
-      font-size: 1rem;
-      padding-bottom: 4px;
-      border-bottom: 1px solid #1e293b;
+      margin: 0 0 8px;
+      font-size: 0.95rem;
+      font-weight: 600;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      color: #0f172a;
+    }
+
+    .badge {
+      font-size: 0.7rem;
+      padding: 2px 8px;
+      border-radius: 999px;
+      background: var(--accent-soft);
+      color: #0369a1;
+      border: 1px solid #bae6fd;
     }
 
     .camera-wrap {
       position: relative;
       width: 100%;
       aspect-ratio: 3 / 4;
-      background: #000;
-      border-radius: 14px;
+      background: #0f172a;
+      border-radius: 12px;
       overflow: hidden;
     }
+
     video {
       width: 100%;
       height: 100%;
       object-fit: cover;
+      background: #000;
     }
 
     .guide-box {
@@ -67,63 +101,75 @@
       left: 6%;
       width: 88%;
       height: 34%;
-      border: 3px solid var(--accent2);
-      border-radius: 16px;
+      border: 3px solid rgba(14,165,233,0.9);
+      border-radius: 14px;
       pointer-events: none;
-      box-shadow: 0 0 0 9999px rgba(0,0,0,0.25);
+      box-shadow: 0 0 0 9999px rgba(0,0,0,0.35);
     }
+
     .guide-text {
       position: absolute;
-      top: 4%;
+      top: 5%;
       left: 50%;
       transform: translateX(-50%);
-      font-size: 0.8rem;
-      color: var(--text-sub);
-      background: rgba(15,23,42,0.9);
-      padding: 4px 12px;
+      font-size: 0.75rem;
+      color: #e5e7eb;
+      background: rgba(15, 23, 42, 0.85);
+      padding: 4px 10px;
       border-radius: 999px;
     }
 
     .action-row {
-      margin-top: 12px;
+      margin-top: 10px;
       display: flex;
-      gap: 8px;
       flex-wrap: wrap;
+      gap: 8px;
     }
+
     button {
       flex: 1 1 calc(50% - 4px);
       padding: 10px;
       border-radius: 999px;
       border: none;
       font-size: 0.85rem;
-      font-weight: 700;
+      font-weight: 600;
       cursor: pointer;
-      background: var(--accent);
-      color: #0b1120;
-      box-shadow: 0 8px 18px rgba(34,197,94,0.45);
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 4px;
       transition: 0.08s;
     }
-    button.secondary {
-      background: #334155;
-      color: #e5e7eb;
-      box-shadow: 0 6px 14px rgba(15,23,42,0.7);
+
+    .btn-primary {
+      background: var(--accent);
+      color: white;
+      box-shadow: 0 8px 16px rgba(14,165,233,0.35);
     }
-    button.full {
+    .btn-secondary {
+      background: #e5e7eb;
+      color: #111827;
+      box-shadow: 0 6px 14px rgba(15,23,42,0.1);
+    }
+    .btn-full {
       flex: 1 1 100%;
     }
+
     button:active {
-      transform: translateY(2px);
-      opacity: 0.95;
-      box-shadow: 0 4px 10px rgba(0,0,0,0.5);
+      transform: translateY(1px);
+      box-shadow: 0 4px 10px rgba(0,0,0,0.2);
+      opacity: 0.96;
     }
 
     .status {
-      margin-top: 8px;
-      font-size: 0.8rem;
+      margin-top: 6px;
+      font-size: 0.78rem;
       color: var(--text-sub);
-      min-height: 1.3em;
+      min-height: 1.2em;
     }
-    .status-error { color: var(--error); }
+    .status-error {
+      color: var(--error);
+    }
 
     .result-label {
       font-size: 0.8rem;
@@ -132,42 +178,45 @@
     }
 
     .expiry-value {
-      font-size: 2.4rem;
+      font-size: 2.2rem;
       font-weight: 900;
-      letter-spacing: 0.16em;
+      letter-spacing: 0.14em;
       text-align: center;
       margin: 10px 0;
-      padding: 14px 8px;
-      border-radius: 16px;
-      border: 3px solid var(--accent2);
-      background: rgba(255,255,255,0.06);
-      color: #fffbe6;
+      padding: 12px 8px;
+      border-radius: 14px;
+      border: 2px solid var(--accent-secondary);
+      background: #ecfdf5;
+      color: #065f46;
     }
 
     .lot-value {
-      font-size: 1.6rem;
+      font-size: 1.5rem;
       font-weight: 800;
       letter-spacing: 0.12em;
       text-align: center;
       margin: 8px 0;
       padding: 10px 8px;
-      border-radius: 14px;
-      border: 2px solid #38bdf8;
-      background: rgba(15,23,42,0.9);
-      color: #e0f2fe;
+      border-radius: 12px;
+      border: 2px solid var(--accent-lot);
+      background: #eef2ff;
+      color: #312e81;
       word-break: break-all;
     }
 
     .raw-text {
-      font-size: 0.8rem;
+      font-size: 0.78rem;
       color: var(--text-sub);
       white-space: pre-wrap;
       word-break: break-all;
+      border-top: 1px solid #e5e7eb;
       margin-top: 6px;
       padding-top: 6px;
-      border-top: 1px solid #1e293b;
       max-height: 6em;
       overflow-y: auto;
+      background: #f9fafb;
+      border-radius: 8px;
+      padding: 6px;
     }
 
     canvas { display: none; }
@@ -175,9 +224,16 @@
 </head>
 <body>
   <div class="app">
+    <header class="app-header">
+      <h1>賞味期限・ロット ライブOCRルーペ</h1>
+      <p>枠内に印字を入れておくと、数秒ごとに自動で読み取り＆読み上げ。</p>
+    </header>
 
     <section class="card">
-      <h2>カメラプレビュー</h2>
+      <h2>
+        カメラ
+        <span class="badge">スマホ用</span>
+      </h2>
       <div class="camera-wrap">
         <video id="preview" autoplay playsinline></video>
         <div class="guide-box"></div>
@@ -185,17 +241,18 @@
       </div>
 
       <div class="action-row">
-        <button id="startCamBtn" class="full">カメラ再接続</button>
-        <button id="toggleLiveBtn">ライブOCR：停止中</button>
-        <button id="shotBtn" class="secondary">この瞬間だけ再解析</button>
+        <button id="startCamBtn" class="btn-primary btn-full">📷 カメラを開始</button>
+        <button id="toggleLiveBtn" class="btn-secondary">▶ ライブOCR：停止中</button>
+        <button id="shotBtn" class="btn-secondary">🔍 今だけ再解析</button>
       </div>
+
       <div id="status" class="status"></div>
     </section>
 
     <section class="card">
       <h2>読み取り結果</h2>
 
-      <div class="result-label">賞味期限候補（安定したら確定）</div>
+      <div class="result-label">賞味期限候補（安定すると更新）</div>
       <div id="expiryValue" class="expiry-value">未読み取り</div>
 
       <div class="result-label">ロット番号候補</div>
@@ -206,6 +263,7 @@
     </section>
   </div>
 
+  <!-- OCR用キャンバス -->
   <canvas id="captureCanvas"></canvas>
 
   <script>
@@ -215,14 +273,15 @@
     const lotEl = document.getElementById("lotValue");
     const rawTextEl = document.getElementById("rawText");
     const captureCanvas = document.getElementById("captureCanvas");
+
+    const startCamBtn = document.getElementById("startCamBtn");
     const toggleLiveBtn = document.getElementById("toggleLiveBtn");
     const shotBtn = document.getElementById("shotBtn");
-    const startCamBtn = document.getElementById("startCamBtn");
 
     let stream = null;
     let isRecognizing = false;
-    let liveOCR = false;
     let liveTimer = null;
+    let liveOCR = false;
 
     const expiryState = { last: "", stableCount: 0, displayed: "" };
     const lotState = { last: "", stableCount: 0, displayed: "" };
@@ -237,8 +296,8 @@
     function speakDigits(label, value) {
       if (!("speechSynthesis" in window) || !value) return;
       const map = {
-        "0":"ゼロ","1":"イチ","2":"ニ","3":"サン","4":"ヨン",
-        "5":"ゴ","6":"ロク","7":"ナナ","8":"ハチ","9":"キュウ"
+        "0": "ゼロ","1": "イチ","2": "ニ","3": "サン","4": "ヨン",
+        "5": "ゴ","6": "ロク","7": "ナナ","8": "ハチ","9": "キュウ"
       };
       const digits = value.replace(/[^0-9]/g, "");
       const spoken = (digits || value)
@@ -252,6 +311,11 @@
     }
 
     async function startCamera() {
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        setStatus("このブラウザではカメラAPIが使えません。Chrome や Safari の最新バージョンでお試しください。", true);
+        return;
+      }
+
       try {
         // 既存ストリームがあれば停止
         if (stream) {
@@ -259,19 +323,28 @@
           stream = null;
         }
 
-        stream = await navigator.mediaDevices.getUserMedia({
-          video: {
-            facingMode: { ideal: "environment" },
-            width: { ideal: 1920 },
-            height: { ideal: 1080 }
-          },
-          audio: false
-        });
+        // まず背面カメラを要求
+        try {
+          stream = await navigator.mediaDevices.getUserMedia({
+            video: { facingMode: { ideal: "environment" } },
+            audio: false
+          });
+        } catch (err) {
+          // 背面カメラ指定がダメならフォールバック
+          console.warn("environmentで失敗、フォールバック:", err);
+          stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+        }
+
         video.srcObject = stream;
         setStatus("カメラ接続完了。枠内に賞味期限とロット印字を入れてください。");
       } catch (err) {
         console.error(err);
-        setStatus("カメラが利用できません: " + err.message + "（ブラウザのカメラ許可設定も確認してください）", true);
+        setStatus(
+          "カメラが利用できません: " +
+          err.message +
+          "（ブラウザのカメラ許可設定と、HTTPSで開いているかを確認してください）",
+          true
+        );
       }
     }
 
@@ -298,3 +371,181 @@
       const lines = text.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
       for (const line of lines) {
         for (const r of rules) {
+          const m = line.match(r);
+          if (m) return m[1];
+        }
+      }
+      return "";
+    }
+
+    function extractLot(text, expiryCandidate) {
+      const lines = text.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+      const expiryNorm = expiryCandidate ? expiryCandidate.replace(/\D/g, "") : "";
+      let best = "";
+      let bestScore = -1;
+
+      for (const line of lines) {
+        if (!line) continue;
+        if (expiryCandidate && line.includes(expiryCandidate)) continue;
+        const norm = line.replace(/\D/g, "");
+        if (expiryNorm && norm === expiryNorm) continue;
+
+        const digits = (line.match(/[0-9]/g) || []).length;
+        const letters = (line.match(/[A-Za-z]/g) || []).length;
+        const score = digits * 2 + letters;
+
+        if (score >= 4 && score > bestScore) {
+          bestScore = score;
+          best = line;
+        }
+      }
+      return best;
+    }
+
+    function updateStableState(state, newValue) {
+      if (!newValue) {
+        state.last = "";
+        state.stableCount = 0;
+        return null;
+      }
+      if (newValue === state.last) {
+        state.stableCount += 1;
+      } else {
+        state.last = newValue;
+        state.stableCount = 1;
+      }
+      if (state.stableCount >= 2 && newValue !== state.displayed) {
+        state.displayed = newValue;
+        return newValue;
+      }
+      return null;
+    }
+
+    async function runOCROnce() {
+      if (!video.videoWidth || !video.videoHeight) {
+        setStatus("カメラ準備中です…『カメラを開始』ボタンを押した後、少し待ってから試してください。", true);
+        return;
+      }
+      if (isRecognizing) return;
+      isRecognizing = true;
+
+      const vw = video.videoWidth;
+      const vh = video.videoHeight;
+
+      captureCanvas.width = vw;
+      captureCanvas.height = vh;
+      const ctx = captureCanvas.getContext("2d");
+      ctx.drawImage(video, 0, 0, vw, vh);
+
+      const W = vw * 0.88;
+      const H = vh * 0.34;
+      const X = vw * 0.06;
+      const Y = vh * 0.40;
+
+      const scale = 2;
+      const c = document.createElement("canvas");
+      c.width = W * scale;
+      c.height = H * scale;
+      const c2 = c.getContext("2d");
+      c2.drawImage(captureCanvas, X, Y, W, H, 0, 0, c.width, c.height);
+
+      preprocess(c2, c.width, c.height);
+
+      try {
+        const { data: { text } } = await Tesseract.recognize(
+          c,
+          "eng",
+          { tessedit_char_whitelist: "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz.-/" }
+        );
+
+        const cleaned = text.trim();
+        rawTextEl.textContent = cleaned || "(なし)";
+
+        const expiryCandidate = extractExpiry(cleaned);
+        const lotCandidate = extractLot(cleaned, expiryCandidate);
+
+        const stableExpiry = updateStableState(expiryState, expiryCandidate);
+        const stableLot = updateStableState(lotState, lotCandidate);
+
+        if (stableExpiry) {
+          expiryEl.textContent = stableExpiry;
+          expiryEl.style.borderColor = "#16a34a";
+          expiryEl.style.backgroundColor = "#dcfce7";
+          if (stableExpiry !== lastSpokenExpiry) {
+            lastSpokenExpiry = stableExpiry;
+            speakDigits("賞味期限", stableExpiry);
+          }
+        } else if (!expiryState.displayed && !expiryCandidate) {
+          expiryEl.textContent = "未読み取り";
+          expiryEl.style.borderColor = "var(--accent-secondary)";
+          expiryEl.style.backgroundColor = "#ecfdf5";
+        }
+
+        if (stableLot) {
+          lotEl.textContent = stableLot;
+          lotEl.style.borderColor = "#22c55e";
+          if (stableLot !== lastSpokenLot) {
+            lastSpokenLot = stableLot;
+            speakDigits("ロット番号", stableLot);
+          }
+        } else if (!lotState.displayed && !lotCandidate) {
+          lotEl.textContent = "未読み取り";
+          lotEl.style.borderColor = "var(--accent-lot)";
+        }
+
+        if (expiryCandidate || lotCandidate) {
+          setStatus("OCR実行中… 枠内で1〜2秒静止させると安定します。");
+        } else {
+          setStatus("数字らしいものが見つかりません。距離や明るさ、角度を少し変えてみてください。", true);
+        }
+      } catch (err) {
+        console.error(err);
+        setStatus("OCRエラー: " + err.message, true);
+      } finally {
+        isRecognizing = false;
+      }
+    }
+
+    function startLiveOCR() {
+      if (liveTimer) return;
+      liveOCR = true;
+      toggleLiveBtn.textContent = "⏸ ライブOCR：動作中";
+      toggleLiveBtn.classList.remove("btn-secondary");
+      toggleLiveBtn.classList.add("btn-primary");
+      setStatus("ライブOCR動作中。枠内で1〜2秒静止させると安定します。");
+      liveTimer = setInterval(runOCROnce, 2000);
+    }
+
+    function stopLiveOCR() {
+      liveOCR = false;
+      if (liveTimer) {
+        clearInterval(liveTimer);
+        liveTimer = null;
+      }
+      toggleLiveBtn.textContent = "▶ ライブOCR：停止中";
+      toggleLiveBtn.classList.remove("btn-primary");
+      toggleLiveBtn.classList.add("btn-secondary");
+      setStatus("ライブOCRは停止中です。必要なときに再開できます。");
+    }
+
+    // イベント設定
+    startCamBtn.addEventListener("click", () => {
+      startCamera();
+    });
+
+    toggleLiveBtn.addEventListener("click", () => {
+      if (liveOCR) stopLiveOCR();
+      else startLiveOCR();
+    });
+
+    shotBtn.addEventListener("click", () => {
+      runOCROnce();
+    });
+
+    window.addEventListener("beforeunload", () => {
+      if (stream) stream.getTracks().forEach(t => t.stop());
+      if (liveTimer) clearInterval(liveTimer);
+    });
+  </script>
+</body>
+</html>
