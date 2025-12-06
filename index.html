@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <title>賞味期限・ロット ライブOCRルーペ</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <meta name="description" content="スマホカメラで賞味期限・ロット印字をライブOCRし、大きく表示＆読み上げするツール。" />
+  <meta name="description" content="スマホカメラで賞味期限・ロット印字をライブOCRし、大きく表示＆読み上げしつつ履歴も保存するツール。" />
 
   <!-- Tesseract.js -->
   <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
@@ -95,16 +95,17 @@
       background: #000;
     }
 
+    /* 認識枠は目安。内部的には中央広めのエリアを使う */
     .guide-box {
       position: absolute;
-      top: 40%;
-      left: 6%;
-      width: 88%;
-      height: 34%;
+      top: 35%;
+      left: 5%;
+      width: 90%;
+      height: 40%;
       border: 3px solid rgba(14,165,233,0.9);
       border-radius: 14px;
       pointer-events: none;
-      box-shadow: 0 0 0 9999px rgba(0,0,0,0.35);
+      box-shadow: 0 0 0 9999px rgba(0,0,0,0.30);
     }
 
     .guide-text {
@@ -117,6 +118,8 @@
       background: rgba(15, 23, 42, 0.85);
       padding: 4px 10px;
       border-radius: 999px;
+      text-align: center;
+      line-height: 1.3;
     }
 
     .action-row {
@@ -153,6 +156,10 @@
     }
     .btn-full {
       flex: 1 1 100%;
+    }
+    .btn-danger {
+      background: #fee2e2;
+      color: #b91c1c;
     }
 
     button:active {
@@ -219,6 +226,35 @@
       padding: 6px;
     }
 
+    .history-list {
+      list-style: none;
+      padding: 0;
+      margin: 8px 0 0;
+      max-height: 180px;
+      overflow-y: auto;
+    }
+    .history-item {
+      display: flex;
+      flex-direction: column;
+      padding: 6px 8px;
+      border-radius: 10px;
+      border: 1px solid #e5e7eb;
+      background: #f9fafb;
+      font-size: 0.78rem;
+      margin-bottom: 6px;
+    }
+    .history-time {
+      color: var(--text-sub);
+      margin-bottom: 2px;
+    }
+    .history-expiry {
+      font-weight: 700;
+      color: #065f46;
+    }
+    .history-lot {
+      color: #312e81;
+    }
+
     canvas { display: none; }
   </style>
 </head>
@@ -226,9 +262,10 @@
   <div class="app">
     <header class="app-header">
       <h1>賞味期限・ロット ライブOCRルーペ</h1>
-      <p>枠内に印字を入れておくと、数秒ごとに自動で読み取り＆読み上げ。</p>
+      <p>枠内付近の印字を数秒ごとに読み取り。上下逆印字にも対応し、履歴も保存します。</p>
     </header>
 
+    <!-- カメラ -->
     <section class="card">
       <h2>
         カメラ
@@ -237,11 +274,13 @@
       <div class="camera-wrap">
         <video id="preview" autoplay playsinline></video>
         <div class="guide-box"></div>
-        <div class="guide-text">賞味期限とロット印字をこの枠にまとめて入れる</div>
+        <div class="guide-text">
+          中央〜枠あたりに<br>賞味期限とロットを入れてください<br>（上下逆さもOK）
+        </div>
       </div>
 
       <div class="action-row">
-        <button id="startCamBtn" class="btn-primary btn-full">📷 カメラを開始</button>
+        <button id="startCamBtn" class="btn-primary btn-full">📷 カメラを開始 / 再接続</button>
         <button id="toggleLiveBtn" class="btn-secondary">▶ ライブOCR：停止中</button>
         <button id="shotBtn" class="btn-secondary">🔍 今だけ再解析</button>
       </div>
@@ -249,6 +288,7 @@
       <div id="status" class="status"></div>
     </section>
 
+    <!-- 結果 -->
     <section class="card">
       <h2>読み取り結果</h2>
 
@@ -260,6 +300,18 @@
 
       <div class="result-label">生テキスト（参照用）</div>
       <div id="rawText" class="raw-text">-</div>
+    </section>
+
+    <!-- 履歴 -->
+    <section class="card">
+      <h2>
+        読み取り履歴
+        <span class="badge">最新10件</span>
+      </h2>
+      <div class="action-row" style="margin-top:4px;">
+        <button id="clearHistoryBtn" class="btn-danger btn-full">🧹 履歴をクリア</button>
+      </div>
+      <ul id="historyList" class="history-list"></ul>
     </section>
   </div>
 
@@ -273,10 +325,11 @@
     const lotEl = document.getElementById("lotValue");
     const rawTextEl = document.getElementById("rawText");
     const captureCanvas = document.getElementById("captureCanvas");
-
     const startCamBtn = document.getElementById("startCamBtn");
     const toggleLiveBtn = document.getElementById("toggleLiveBtn");
     const shotBtn = document.getElementById("shotBtn");
+    const historyListEl = document.getElementById("historyList");
+    const clearHistoryBtn = document.getElementById("clearHistoryBtn");
 
     let stream = null;
     let isRecognizing = false;
@@ -287,6 +340,8 @@
     const lotState = { last: "", stableCount: 0, displayed: "" };
     let lastSpokenExpiry = "";
     let lastSpokenLot = "";
+    let history = [];
+    let lastHistoryKey = "";
 
     function setStatus(msg, isError = false) {
       statusEl.textContent = msg;
@@ -315,36 +370,25 @@
         setStatus("このブラウザではカメラAPIが使えません。Chrome や Safari の最新バージョンでお試しください。", true);
         return;
       }
-
       try {
-        // 既存ストリームがあれば停止
         if (stream) {
           stream.getTracks().forEach(t => t.stop());
           stream = null;
         }
-
-        // まず背面カメラを要求
         try {
           stream = await navigator.mediaDevices.getUserMedia({
             video: { facingMode: { ideal: "environment" } },
             audio: false
           });
-        } catch (err) {
-          // 背面カメラ指定がダメならフォールバック
-          console.warn("environmentで失敗、フォールバック:", err);
+        } catch (errEnv) {
+          console.warn("environmentで失敗、フォールバック:", errEnv);
           stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
         }
-
         video.srcObject = stream;
-        setStatus("カメラ接続完了。枠内に賞味期限とロット印字を入れてください。");
+        setStatus("カメラ接続完了。中央〜枠あたりに印字を入れてください。上下逆の印字もOKです。");
       } catch (err) {
         console.error(err);
-        setStatus(
-          "カメラが利用できません: " +
-          err.message +
-          "（ブラウザのカメラ許可設定と、HTTPSで開いているかを確認してください）",
-          true
-        );
+        setStatus("カメラが利用できません: " + err.message + "（カメラ許可とHTTPSを確認）", true);
       }
     }
 
@@ -387,6 +431,7 @@
       for (const line of lines) {
         if (!line) continue;
         if (expiryCandidate && line.includes(expiryCandidate)) continue;
+
         const norm = line.replace(/\D/g, "");
         if (expiryNorm && norm === expiryNorm) continue;
 
@@ -421,9 +466,133 @@
       return null;
     }
 
+    function addHistory(expiryVal, lotVal) {
+      const key = (expiryVal || "") + "|" + (lotVal || "");
+      if (!key || key === "|" || key === lastHistoryKey) return;
+      lastHistoryKey = key;
+
+      const now = new Date();
+      const timeLabel = now.toLocaleTimeString("ja-JP", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+
+      const entry = {
+        time: timeLabel,
+        expiry: expiryVal || "",
+        lot: lotVal || ""
+      };
+
+      history.unshift(entry);
+      if (history.length > 10) history = history.slice(0, 10);
+      saveHistory();
+      renderHistory();
+    }
+
+    function renderHistory() {
+      historyListEl.innerHTML = "";
+      if (history.length === 0) {
+        const li = document.createElement("li");
+        li.textContent = "まだ履歴はありません。";
+        li.style.fontSize = "0.78rem";
+        li.style.color = "var(--text-sub)";
+        historyListEl.appendChild(li);
+        return;
+      }
+      for (const item of history) {
+        const li = document.createElement("li");
+        li.className = "history-item";
+
+        const t = document.createElement("div");
+        t.className = "history-time";
+        t.textContent = item.time;
+
+        const e = document.createElement("div");
+        e.className = "history-expiry";
+        e.textContent = item.expiry ? `賞味期限: ${item.expiry}` : "賞味期限: (なし)";
+
+        const l = document.createElement("div");
+        l.className = "history-lot";
+        l.textContent = item.lot ? `ロット: ${item.lot}` : "ロット: (なし)";
+
+        li.appendChild(t);
+        li.appendChild(e);
+        li.appendChild(l);
+        historyListEl.appendChild(li);
+      }
+    }
+
+    function saveHistory() {
+      if (!window.localStorage) return;
+      try {
+        localStorage.setItem("expiryLotHistory", JSON.stringify(history));
+      } catch (e) {
+        console.warn("履歴保存に失敗:", e);
+      }
+    }
+
+    function loadHistory() {
+      if (!window.localStorage) {
+        renderHistory();
+        return;
+      }
+      try {
+        const raw = localStorage.getItem("expiryLotHistory");
+        if (raw) {
+          history = JSON.parse(raw) || [];
+        }
+      } catch (e) {
+        console.warn("履歴読み込みに失敗:", e);
+      }
+      renderHistory();
+    }
+
+    async function recognizeWithOrientations(roiCanvas) {
+      async function runOnCanvas(canvas) {
+        const ctx = canvas.getContext("2d");
+        preprocess(ctx, canvas.width, canvas.height);
+        const { data: { text } } = await Tesseract.recognize(
+          canvas,
+          "eng",
+          { tessedit_char_whitelist: "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz.-/" }
+        );
+        const cleaned = text.trim();
+        const expiryCandidate = extractExpiry(cleaned);
+        const lotCandidate = extractLot(cleaned, expiryCandidate);
+        return { cleaned, expiryCandidate, lotCandidate };
+      }
+
+      // 0度
+      const baseCanvas = document.createElement("canvas");
+      baseCanvas.width = roiCanvas.width;
+      baseCanvas.height = roiCanvas.height;
+      baseCanvas.getContext("2d").drawImage(roiCanvas, 0, 0);
+      let result0 = await runOnCanvas(baseCanvas);
+      let combinedText = result0.cleaned;
+
+      if (result0.expiryCandidate || result0.lotCandidate) {
+        return { cleaned: combinedText, expiryCandidate: result0.expiryCandidate, lotCandidate: result0.lotCandidate };
+      }
+
+      // 180度（上下逆）
+      const rotCanvas = document.createElement("canvas");
+      rotCanvas.width = roiCanvas.width;
+      rotCanvas.height = roiCanvas.height;
+      const ctxRot = rotCanvas.getContext("2d");
+      ctxRot.translate(rotCanvas.width, rotCanvas.height);
+      ctxRot.rotate(Math.PI);
+      ctxRot.drawImage(roiCanvas, 0, 0);
+
+      let result180 = await runOnCanvas(rotCanvas);
+      combinedText += (result180.cleaned ? "\n" + result180.cleaned : "");
+
+      return {
+        cleaned: combinedText,
+        expiryCandidate: result180.expiryCandidate,
+        lotCandidate: result180.lotCandidate
+      };
+    }
+
     async function runOCROnce() {
       if (!video.videoWidth || !video.videoHeight) {
-        setStatus("カメラ準備中です…『カメラを開始』ボタンを押した後、少し待ってから試してください。", true);
+        setStatus("カメラ準備中です…『カメラを開始』を押して少し待ってから試してください。", true);
         return;
       }
       if (isRecognizing) return;
@@ -437,36 +606,27 @@
       const ctx = captureCanvas.getContext("2d");
       ctx.drawImage(video, 0, 0, vw, vh);
 
-      const W = vw * 0.88;
-      const H = vh * 0.34;
-      const X = vw * 0.06;
-      const Y = vh * 0.40;
+      // ▼ 認識エリア：画面中央広め（枠より少し広い）
+      const W = vw * 0.9;
+      const H = vh * 0.6;
+      const X = vw * 0.05;
+      const Y = vh * 0.2;
 
       const scale = 2;
-      const c = document.createElement("canvas");
-      c.width = W * scale;
-      c.height = H * scale;
-      const c2 = c.getContext("2d");
-      c2.drawImage(captureCanvas, X, Y, W, H, 0, 0, c.width, c.height);
-
-      preprocess(c2, c.width, c.height);
+      const roiCanvas = document.createElement("canvas");
+      roiCanvas.width = W * scale;
+      roiCanvas.height = H * scale;
+      const roiCtx = roiCanvas.getContext("2d");
+      roiCtx.drawImage(captureCanvas, X, Y, W, H, 0, 0, roiCanvas.width, roiCanvas.height);
 
       try {
-        const { data: { text } } = await Tesseract.recognize(
-          c,
-          "eng",
-          { tessedit_char_whitelist: "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz.-/" }
-        );
-
-        const cleaned = text.trim();
+        const { cleaned, expiryCandidate, lotCandidate } = await recognizeWithOrientations(roiCanvas);
         rawTextEl.textContent = cleaned || "(なし)";
-
-        const expiryCandidate = extractExpiry(cleaned);
-        const lotCandidate = extractLot(cleaned, expiryCandidate);
 
         const stableExpiry = updateStableState(expiryState, expiryCandidate);
         const stableLot = updateStableState(lotState, lotCandidate);
 
+        // 賞味期限
         if (stableExpiry) {
           expiryEl.textContent = stableExpiry;
           expiryEl.style.borderColor = "#16a34a";
@@ -481,6 +641,7 @@
           expiryEl.style.backgroundColor = "#ecfdf5";
         }
 
+        // ロット
         if (stableLot) {
           lotEl.textContent = stableLot;
           lotEl.style.borderColor = "#22c55e";
@@ -493,10 +654,17 @@
           lotEl.style.borderColor = "var(--accent-lot)";
         }
 
+        // 履歴登録（安定して表示されている値を使う）
+        const histExpiry = expiryState.displayed || expiryCandidate || "";
+        const histLot = lotState.displayed || lotCandidate || "";
+        if (histExpiry || histLot) {
+          addHistory(histExpiry, histLot);
+        }
+
         if (expiryCandidate || lotCandidate) {
-          setStatus("OCR実行中… 枠内で1〜2秒静止させると安定します。");
+          setStatus("OCR実行中… 枠付近で1〜2秒静止すると安定します。");
         } else {
-          setStatus("数字らしいものが見つかりません。距離や明るさ、角度を少し変えてみてください。", true);
+          setStatus("数字らしいものが見つかりません。距離・明るさ・角度を変えてみてください。", true);
         }
       } catch (err) {
         console.error(err);
@@ -512,8 +680,8 @@
       toggleLiveBtn.textContent = "⏸ ライブOCR：動作中";
       toggleLiveBtn.classList.remove("btn-secondary");
       toggleLiveBtn.classList.add("btn-primary");
-      setStatus("ライブOCR動作中。枠内で1〜2秒静止させると安定します。");
-      liveTimer = setInterval(runOCROnce, 2000);
+      setStatus("ライブOCR動作中。中央付近で1〜2秒静止すると安定します。");
+      liveTimer = setInterval(runOCROnce, 3000); // 3秒ごと
     }
 
     function stopLiveOCR() {
@@ -542,10 +710,20 @@
       runOCROnce();
     });
 
+    clearHistoryBtn.addEventListener("click", () => {
+      history = [];
+      lastHistoryKey = "";
+      saveHistory();
+      renderHistory();
+    });
+
     window.addEventListener("beforeunload", () => {
       if (stream) stream.getTracks().forEach(t => t.stop());
       if (liveTimer) clearInterval(liveTimer);
     });
+
+    // 起動時に履歴だけ読み込む
+    loadHistory();
   </script>
 </body>
 </html>
