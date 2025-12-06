@@ -61,7 +61,6 @@
       object-fit: cover;
     }
 
-    /* 読み取り枠（大きめ） */
     .guide-box {
       position: absolute;
       top: 40%;
@@ -89,13 +88,14 @@
       margin-top: 12px;
       display: flex;
       gap: 8px;
+      flex-wrap: wrap;
     }
     button {
-      flex: 1;
-      padding: 12px;
+      flex: 1 1 calc(50% - 4px);
+      padding: 10px;
       border-radius: 999px;
       border: none;
-      font-size: 0.9rem;
+      font-size: 0.85rem;
       font-weight: 700;
       cursor: pointer;
       background: var(--accent);
@@ -107,6 +107,9 @@
       background: #334155;
       color: #e5e7eb;
       box-shadow: 0 6px 14px rgba(15,23,42,0.7);
+    }
+    button.full {
+      flex: 1 1 100%;
     }
     button:active {
       transform: translateY(2px);
@@ -128,7 +131,6 @@
       margin-top: 4px;
     }
 
-    /* 賞味期限（主役） */
     .expiry-value {
       font-size: 2.4rem;
       font-weight: 900;
@@ -142,7 +144,6 @@
       color: #fffbe6;
     }
 
-    /* ロット番号（サブだが大きめ） */
     .lot-value {
       font-size: 1.6rem;
       font-weight: 800;
@@ -184,6 +185,7 @@
       </div>
 
       <div class="action-row">
+        <button id="startCamBtn" class="full">カメラ再接続</button>
         <button id="toggleLiveBtn">ライブOCR：停止中</button>
         <button id="shotBtn" class="secondary">この瞬間だけ再解析</button>
       </div>
@@ -197,4 +199,102 @@
       <div id="expiryValue" class="expiry-value">未読み取り</div>
 
       <div class="result-label">ロット番号候補</div>
-      <div id="lotValue" class="lot-value">
+      <div id="lotValue" class="lot-value">未読み取り</div>
+
+      <div class="result-label">生テキスト（参照用）</div>
+      <div id="rawText" class="raw-text">-</div>
+    </section>
+  </div>
+
+  <canvas id="captureCanvas"></canvas>
+
+  <script>
+    const video = document.getElementById("preview");
+    const statusEl = document.getElementById("status");
+    const expiryEl = document.getElementById("expiryValue");
+    const lotEl = document.getElementById("lotValue");
+    const rawTextEl = document.getElementById("rawText");
+    const captureCanvas = document.getElementById("captureCanvas");
+    const toggleLiveBtn = document.getElementById("toggleLiveBtn");
+    const shotBtn = document.getElementById("shotBtn");
+    const startCamBtn = document.getElementById("startCamBtn");
+
+    let stream = null;
+    let isRecognizing = false;
+    let liveOCR = false;
+    let liveTimer = null;
+
+    const expiryState = { last: "", stableCount: 0, displayed: "" };
+    const lotState = { last: "", stableCount: 0, displayed: "" };
+    let lastSpokenExpiry = "";
+    let lastSpokenLot = "";
+
+    function setStatus(msg, isError = false) {
+      statusEl.textContent = msg;
+      statusEl.classList.toggle("status-error", isError);
+    }
+
+    function speakDigits(label, value) {
+      if (!("speechSynthesis" in window) || !value) return;
+      const map = {
+        "0":"ゼロ","1":"イチ","2":"ニ","3":"サン","4":"ヨン",
+        "5":"ゴ","6":"ロク","7":"ナナ","8":"ハチ","9":"キュウ"
+      };
+      const digits = value.replace(/[^0-9]/g, "");
+      const spoken = (digits || value)
+        .split("")
+        .map(ch => map[ch] || ch)
+        .join(" ");
+      const u = new SpeechSynthesisUtterance(`${label}、${spoken}`);
+      u.lang = "ja-JP";
+      window.speechSynthesis.cancel();
+      window.speechSynthesis.speak(u);
+    }
+
+    async function startCamera() {
+      try {
+        // 既存ストリームがあれば停止
+        if (stream) {
+          stream.getTracks().forEach(t => t.stop());
+          stream = null;
+        }
+
+        stream = await navigator.mediaDevices.getUserMedia({
+          video: {
+            facingMode: { ideal: "environment" },
+            width: { ideal: 1920 },
+            height: { ideal: 1080 }
+          },
+          audio: false
+        });
+        video.srcObject = stream;
+        setStatus("カメラ接続完了。枠内に賞味期限とロット印字を入れてください。");
+      } catch (err) {
+        console.error(err);
+        setStatus("カメラが利用できません: " + err.message + "（ブラウザのカメラ許可設定も確認してください）", true);
+      }
+    }
+
+    function preprocess(ctx, w, h) {
+      const img = ctx.getImageData(0, 0, w, h);
+      const d = img.data;
+      const thr = 160;
+      for (let i = 0; i < d.length; i += 4) {
+        const r = d[i], g = d[i+1], b = d[i+2];
+        const v = 0.299*r + 0.587*g + 0.114*b;
+        const val = v < thr ? 0 : 255;
+        d[i] = d[i+1] = d[i+2] = val;
+      }
+      ctx.putImageData(img, 0, 0);
+    }
+
+    function extractExpiry(text) {
+      const rules = [
+        /\b(\d{4}[.\-/]\d{1,2}[.\-/]\d{1,2})\b/,
+        /\b(\d{2}[.\-/]\d{1,2}[.\-/]\d{1,2})\b/,
+        /\b(\d{4}[.\-/]\d{1,2})\b/,
+        /\b(\d{2}[.\-/]\d{1,2})\b/
+      ];
+      const lines = text.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+      for (const line of lines) {
+        for (const r of rules) {
