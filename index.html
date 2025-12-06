@@ -2,12 +2,10 @@
 <html lang="ja">
 <head>
   <meta charset="UTF-8" />
-  <title>エーオーアイ・バーコード＋ロット／賞味期限 OCR 読み取り</title>
+  <title>賞味期限 OCR ルーペ</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <meta name="description" content="スマホのカメラでバーコードを読み取り、同じカメラ映像からロット番号・賞味期限らしき文字をOCRで抽出し、画面表示と音声読み上げを行う実験ツールです。" />
+  <meta name="description" content="スマホカメラで賞味期限印字を拡大・OCRし、候補を表示＆読み上げする簡易ツールです。" />
 
-  <!-- Quagga2（バーコード読み取り） -->
-  <script src="https://unpkg.com/@ericblade/quagga2@1.11.0/dist/quagga.min.js"></script>
   <!-- Tesseract.js（OCR） -->
   <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
 
@@ -16,6 +14,7 @@
       --bg: #020617;
       --card-bg: #0f172a;
       --accent: #22c55e;
+      --accent-soft: rgba(34, 197, 94, 0.3);
       --text-main: #e5e7eb;
       --text-sub: #9ca3af;
       --border-soft: #1f2937;
@@ -67,7 +66,7 @@
     }
 
     /* カメラ表示エリア */
-    #cameraContainer {
+    .camera-wrap {
       position: relative;
       width: 100%;
       aspect-ratio: 3 / 4;
@@ -76,29 +75,23 @@
       overflow: hidden;
     }
 
-    /* バーコード用ガイド枠（広め） */
-    .guide-barcode {
+    video {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+    }
+
+    /* 賞味期限を合わせる枠 */
+    .guide-expiry {
       position: absolute;
-      top: 40%;
-      left: 10%;
-      width: 80%;
-      height: 20%;
-      border: 2px solid var(--accent);
+      top: 55%;
+      left: 15%;
+      width: 70%;
+      height: 14%;
+      border: 2px solid #eab308;
       border-radius: 10px;
       pointer-events: none;
       box-shadow: 0 0 0 9999px rgba(0,0,0,0.35);
-    }
-
-    /* ロット／賞味期限用 OCR枠（少し小さめ） */
-    .guide-ocr {
-      position: absolute;
-      top: 52%;
-      left: 18%;
-      width: 64%;
-      height: 16%;
-      border: 1px dashed #eab308;
-      border-radius: 8px;
-      pointer-events: none;
     }
 
     .guide-text {
@@ -122,8 +115,8 @@
     }
 
     .action-row button {
-      flex: 1 1 48%;
-      padding: 9px 10px;
+      flex: 1 1 100%;
+      padding: 10px 12px;
       border-radius: 999px;
       border: none;
       font-size: 0.9rem;
@@ -134,12 +127,6 @@
       color: #0b1120;
       box-shadow: 0 8px 16px rgba(22,163,74,0.45);
       transition: transform 0.08s ease, box-shadow 0.08s ease, opacity 0.1s ease;
-    }
-
-    .action-row button.secondary {
-      background: #334155;
-      color: #e5e7eb;
-      box-shadow: 0 8px 16px rgba(15,23,42,0.55);
     }
 
     .action-row button:active {
@@ -154,26 +141,23 @@
       min-height: 1.2em;
       color: var(--text-sub);
     }
-    .status-error { color: var(--ng); }
+    .status-error {
+      color: var(--ng);
+    }
 
     .result-label {
       font-size: 0.8rem;
       color: var(--text-sub);
       margin-top: 4px;
     }
-    .code-value {
-      font-size: 1.15rem;
+
+    .expiry-value {
+      font-size: 1.1rem;
       font-weight: 700;
       letter-spacing: 0.08em;
       margin-top: 2px;
     }
-    .lot-candidate,
-    .expiry-candidate {
-      font-size: 1rem;
-      font-weight: 600;
-      letter-spacing: 0.06em;
-      margin-top: 2px;
-    }
+
     .raw-text {
       font-size: 0.75rem;
       color: var(--text-sub);
@@ -198,90 +182,68 @@
 <body>
   <div class="app">
     <header class="app-header">
-      <h1>エーオーアイ・バーコード＋ロット／賞味期限 OCR 読み取り</h1>
-      <p class="app-subtitle">バーコード → 数字読み上げ ＋ 枠内OCRでロット・賞味期限を補助</p>
+      <h1>賞味期限 OCR ルーペ</h1>
+      <p class="app-subtitle">枠内の賞味期限印字を拡大・解析して候補を表示＆読み上げ</p>
     </header>
 
-    <!-- カメラ＆操作 -->
+    <!-- カメラ -->
     <section class="card">
       <h2>カメラプレビュー</h2>
-      <div id="cameraContainer">
-        <div class="guide-barcode"></div>
-        <div class="guide-ocr"></div>
-        <div class="guide-text">バーコードとロット印字をこのあたりに合わせる</div>
+      <div class="camera-wrap">
+        <video id="preview" autoplay playsinline></video>
+        <div class="guide-expiry"></div>
+        <div class="guide-text">賞味期限の印字をこの枠に合わせる</div>
       </div>
 
       <div class="action-row">
-        <button id="startScanBtn">バーコード読み取り開始</button>
-        <button id="stopScanBtn" class="secondary">停止</button>
-        <button id="ocrBtn" class="secondary">枠内をOCRで読む</button>
+        <button id="ocrBtn">賞味期限を読み取る</button>
       </div>
 
       <div id="status" class="status"></div>
       <p class="note">
-        ※ HTTPS環境（GitHub Pagesなど）での利用を推奨します。<br>
-        ※ 明るい場所で、印字がくっきり見える距離まで近づけると精度が上がります。
+        ※ 明るい場所で、印字がくっきり見える距離まで近づけてください。<br>
+        ※ 印字全体が黄色い枠の中に収まるように合わせると精度が上がります。
       </p>
     </section>
 
-    <!-- バーコード結果 -->
+    <!-- 結果 -->
     <section class="card">
-      <h2>バーコード結果</h2>
-      <div class="result-label">コード</div>
-      <div id="codeValue" class="code-value">未読み取り</div>
-      <p class="note">読み上げは「イチ ニ サン…」と1桁ずつ数字で発声します。</p>
-    </section>
+      <h2>読み取り結果</h2>
 
-    <!-- OCR結果 -->
-    <section class="card">
-      <h2>ロット／賞味期限 OCR 結果</h2>
-      <div class="result-label">候補1（ロット想定）</div>
-      <div id="lotCandidate" class="lot-candidate">未読み取り</div>
-
-      <div class="result-label" style="margin-top:6px;">候補2（賞味期限想定）</div>
-      <div id="expiryCandidate" class="expiry-candidate">未読み取り</div>
+      <div class="result-label">賞味期限候補</div>
+      <div id="expiryValue" class="expiry-value">未読み取り</div>
 
       <div class="result-label" style="margin-top:8px;">生テキスト（参考）</div>
       <div id="rawText" class="raw-text">-</div>
 
       <p class="note">
-        認識した行のうち「数字を多く含む上位2行」をロット候補・賞味期限候補として表示し、同時に読み上げます。
+        認識したテキストから「日付らしいパターン（YY.MM.DD / YYYY.MM など）」を優先して抽出しています。
       </p>
     </section>
   </div>
 
-  <!-- OCR用キャンバス -->
+  <!-- キャプチャ＆前処理用キャンバス -->
   <canvas id="captureCanvas"></canvas>
 
   <script>
+    const video = document.getElementById("preview");
+    const ocrBtn = document.getElementById("ocrBtn");
     const statusEl = document.getElementById("status");
-    const codeEl = document.getElementById("codeValue");
-    const lotCandidateEl = document.getElementById("lotCandidate");
-    const expiryCandidateEl = document.getElementById("expiryCandidate");
+    const expiryEl = document.getElementById("expiryValue");
     const rawTextEl = document.getElementById("rawText");
-    const cameraContainer = document.getElementById("cameraContainer");
     const captureCanvas = document.getElementById("captureCanvas");
 
-    let isScanning = false;
-    let lastCode = "";
-    let lastSpokenAt = 0;
+    let stream = null;
+    let isRecognizing = false;
 
     function setStatus(msg, isError = false) {
       statusEl.textContent = msg;
       statusEl.classList.toggle("status-error", isError);
     }
 
-    // 音声読み上げ
-    function speak(text) {
+    // 音声読み上げ（数字を1桁ずつ）
+    function speakExpiry(expiryStr) {
       if (!("speechSynthesis" in window)) return;
-      const utter = new SpeechSynthesisUtterance(text);
-      utter.lang = "ja-JP";
-      window.speechSynthesis.cancel();
-      window.speechSynthesis.speak(utter);
-    }
-
-    // 数字を1桁ずつ日本語読み
-    function codeToJapaneseDigits(code) {
       const map = {
         "0": "ゼロ",
         "1": "イチ",
@@ -294,104 +256,97 @@
         "8": "ハチ",
         "9": "キュウ"
       };
-      return code.split("").map(ch => map[ch] || ch).join(" ");
-    }
+      const digitsOnly = expiryStr.replace(/[^0-9]/g, "");
+      const spoken = digitsOnly
+        .split("")
+        .map(ch => map[ch] || ch)
+        .join(" ");
 
-    // Quagga: 読み取り時
-    function onDetected(result) {
-      if (!result || !result.codeResult || !result.codeResult.code) return;
-      const code = result.codeResult.code;
-      const now = Date.now();
-
-      // 同じコードの連続読み上げ防止
-      if (code === lastCode && now - lastSpokenAt < 1500) return;
-
-      lastCode = code;
-      lastSpokenAt = now;
-
-      codeEl.textContent = code;
-      setStatus("バーコード読み取り成功：" + code);
-
-      const digitsSpeech = codeToJapaneseDigits(code);
-      speak(`バーコード、${digitsSpeech}`);
-    }
-
-    // バーコード読み取り開始
-    function startScanner() {
-      if (isScanning) return;
-
-      Quagga.init(
-        {
-          inputStream: {
-            type: "LiveStream",
-            target: cameraContainer,
-            constraints: { facingMode: "environment" },
-            area: { top: "30%", right: "10%", left: "10%", bottom: "30%" }
-          },
-          decoder: {
-            readers: [
-              "ean_reader",
-              "ean_8_reader",
-              "code_128_reader",
-              "code_39_reader",
-              "upc_reader",
-              "upc_e_reader"
-            ]
-          },
-          locate: true
-        },
-        err => {
-          if (err) {
-            console.error(err);
-            setStatus("バーコード初期化エラー：" + err.message, true);
-            return;
-          }
-          Quagga.start();
-          Quagga.onDetected(onDetected);
-          isScanning = true;
-          setStatus("バーコード読み取り中… 枠内にバーコードを合わせてください。");
-        }
+      const utter = new SpeechSynthesisUtterance(
+        `賞味期限候補、${spoken || expiryStr}。`
       );
+      utter.lang = "ja-JP";
+      window.speechSynthesis.cancel();
+      window.speechSynthesis.speak(utter);
     }
 
-    // バーコード読み取り停止
-    function stopScanner() {
-      if (!isScanning) return;
-      Quagga.offDetected(onDetected);
-      Quagga.stop();
-      isScanning = false;
-      setStatus("バーコード読み取りを停止しました。");
+    // カメラ起動
+    async function startCamera() {
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({
+          video: {
+            facingMode: { ideal: "environment" },
+            width: { ideal: 1280 },
+            height: { ideal: 720 }
+          },
+          audio: false
+        });
+        video.srcObject = stream;
+        setStatus("カメラ準備完了。賞味期限印字を枠に合わせてください。");
+      } catch (err) {
+        console.error(err);
+        setStatus("カメラが利用できません：" + err.message, true);
+      }
     }
 
-    // OCR用：行ごとの中から数字が多い上位N行を返す
-    function pickTopDigitLines(text, n = 2) {
+    // 賞味期限らしい文字列を抽出
+    function extractExpiryCandidate(text) {
       const lines = text
         .split(/\r?\n/)
         .map(l => l.trim())
         .filter(l => l.length > 0);
 
-      const scored = lines.map(line => {
-        const digits = (line.match(/[0-9]/g) || []).length;
-        return { line, score: digits };
-      });
+      const candidates = [];
 
-      scored.sort((a, b) => b.score - a.score);
-      return scored.slice(0, n).map(s => s.line);
-    }
+      const patterns = [
+        /\b(\d{4}[.\-/]\d{1,2}[.\-/]\d{1,2})\b/, // YYYY.MM.DD
+        /\b(\d{2}[.\-/]\d{1,2}[.\-/]\d{1,2})\b/, // YY.MM.DD
+        /\b(\d{4}[.\-/]\d{1,2})\b/,              // YYYY.MM
+        /\b(\d{2}[.\-/]\d{1,2})\b/               // YY.MM
+      ];
 
-    // OCR: 枠内を読み取る
-    async function runOCR() {
-      // Quagga の video要素を取得
-      const video = cameraContainer.querySelector("video");
-      if (!video || !video.videoWidth || !video.videoHeight) {
-        setStatus("カメラの準備中です。少し待ってから再度お試しください。", true);
-        return;
+      for (const line of lines) {
+        for (const re of patterns) {
+          const m = line.match(re);
+          if (m && m[1]) {
+            candidates.push(m[1]);
+          }
+        }
       }
 
-      setStatus("OCR実行中… 数秒お待ちください。");
-      rawTextEl.textContent = "-";
-      lotCandidateEl.textContent = "処理中…";
-      expiryCandidateEl.textContent = "処理中…";
+      if (candidates.length === 0) return "";
+      // 同じものを重複除去して、最初の候補を返す
+      const uniq = [...new Set(candidates)];
+      return uniq[0];
+    }
+
+    // 画像前処理（グレースケール＋簡易二値化）
+    function preprocessImage(ctx, width, height) {
+      const imgData = ctx.getImageData(0, 0, width, height);
+      const data = imgData.data;
+      const threshold = 160; // 適宜調整
+
+      for (let i = 0; i < data.length; i += 4) {
+        const r = data[i];
+        const g = data[i + 1];
+        const b = data[i + 2];
+        // グレースケール
+        const v = 0.299 * r + 0.587 * g + 0.114 * b;
+        // 簡易二値化
+        const val = v < threshold ? 0 : 255;
+        data[i] = data[i + 1] = data[i + 2] = val;
+      }
+      ctx.putImageData(imgData, 0, 0);
+    }
+
+    async function runOCR() {
+      if (!video.videoWidth || !video.videoHeight) {
+        setStatus("カメラの準備中です。少し待ってから試してください。", true);
+        return;
+      }
+      if (isRecognizing) return;
+      isRecognizing = true;
+      setStatus("賞味期限を解析中…");
 
       const vw = video.videoWidth;
       const vh = video.videoHeight;
@@ -402,69 +357,76 @@
       const ctx = captureCanvas.getContext("2d");
       ctx.drawImage(video, 0, 0, vw, vh);
 
-      // OCR枠の位置：Quagga area と似た位置（中央付近のやや下）
-      const cropWidth = vw * 0.64;
-      const cropHeight = vh * 0.16;
-      const cropX = vw * 0.18;
-      const cropY = vh * 0.52;
+      // 枠の位置と同じぐらいのエリアを切り出し
+      const cropWidth = vw * 0.70;
+      const cropHeight = vh * 0.14;
+      const cropX = vw * 0.15;
+      const cropY = vh * 0.55;
 
+      // 切り出しキャンバス（解像度を2倍にして文字を大きく）
+      const scale = 2;
       const cropCanvas = document.createElement("canvas");
-      cropCanvas.width = cropWidth;
-      cropCanvas.height = cropHeight;
+      cropCanvas.width = cropWidth * scale;
+      cropCanvas.height = cropHeight * scale;
       const cropCtx = cropCanvas.getContext("2d");
+
       cropCtx.drawImage(
         captureCanvas,
         cropX, cropY, cropWidth, cropHeight,
-        0, 0, cropWidth, cropHeight
+        0, 0, cropWidth * scale, cropHeight * scale
       );
+
+      // 前処理（グレースケール＋二値化）
+      preprocessImage(cropCtx, cropCanvas.width, cropCanvas.height);
 
       try {
         const { data: { text } } = await Tesseract.recognize(
           cropCanvas,
-          "eng",  // 数字＋英字が主なので英語でOK
-          { logger: m => console.log(m) }
+          "eng", // 数字＋簡単な記号が主なので英語でOK
+          {
+            logger: m => console.log(m),
+            tessedit_char_whitelist: "0123456789./-"
+          }
         );
 
         const cleaned = text.trim();
         rawTextEl.textContent = cleaned || "(認識結果なし)";
 
-        const [line1 = "", line2 = ""] = pickTopDigitLines(cleaned, 2);
-
-        lotCandidateEl.textContent = line1 || "候補なし";
-        expiryCandidateEl.textContent = line2 || "候補なし";
-
-        // 読み上げ（数字が多いので1桁読みの関数をそのまま使う）
-        let speechText = "";
-        if (line1) {
-          speechText += "ロット候補、" + codeToJapaneseDigits(line1.replace(/\s+/g, "")) + "。";
+        const expiryCandidate = extractExpiryCandidate(cleaned);
+        if (expiryCandidate) {
+          expiryEl.textContent = expiryCandidate;
+          setStatus("賞味期限候補を検出しました。");
+          speakExpiry(expiryCandidate);
+        } else {
+          expiryEl.textContent = "候補なし";
+          setStatus("日付らしいパターンが見つかりませんでした。", true);
+          speakExpiry("");
         }
-        if (line2) {
-          speechText += "賞味期限候補、" + codeToJapaneseDigits(line2.replace(/\s+/g, "")) + "。";
-        }
-        if (!speechText) {
-          speechText = "ロットや賞味期限らしい数字を、うまく読み取れませんでした。";
-        }
-        speak(speechText);
 
-        setStatus("OCR完了。候補を表示しました。");
       } catch (err) {
         console.error(err);
-        setStatus("OCR中にエラー：" + err.message, true);
         rawTextEl.textContent = "(エラー)";
-        lotCandidateEl.textContent = "候補なし";
-        expiryCandidateEl.textContent = "候補なし";
-        speak("OCRに失敗しました。");
+        expiryEl.textContent = "候補なし";
+        setStatus("OCR中にエラーが発生しました：" + err.message, true);
+      } finally {
+        isRecognizing = false;
       }
     }
 
-    // ボタンイベント
-    document.getElementById("startScanBtn").addEventListener("click", startScanner);
-    document.getElementById("stopScanBtn").addEventListener("click", stopScanner);
-    document.getElementById("ocrBtn").addEventListener("click", runOCR);
+    ocrBtn.addEventListener("click", runOCR);
+
+    // ページ読み込み時にカメラ起動
+    if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+      startCamera();
+    } else {
+      setStatus("この端末ではカメラが利用できません。", true);
+    }
 
     // ページ離脱時にカメラ停止
     window.addEventListener("beforeunload", () => {
-      stopScanner();
+      if (stream) {
+        stream.getTracks().forEach(t => t.stop());
+      }
     });
   </script>
 </body>
