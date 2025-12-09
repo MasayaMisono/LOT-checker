@@ -2,12 +2,11 @@
 <html lang="ja">
 <head>
   <meta charset="UTF-8" />
-  <title>賞味期限・ロット ライブOCRルーペ</title>
+  <title>賞味期限・ロット ライブOCRルーペ（OCR.space版）</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <meta name="description" content="スマホカメラで賞味期限・ロット印字をライブOCRし、大きく表示＆読み上げしつつ履歴も保存するツール。" />
+  <meta name="description" content="スマホカメラで賞味期限・ロット印字をライブOCRし、大きく表示＆読み上げしつつ履歴も保存するツール（OCR.spaceエンジン版）。" />
 
-  <!-- Tesseract.js -->
-  <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+  <!-- ※ Tesseract.js は使用しないので削除しました -->
 
   <style>
     :root {
@@ -261,21 +260,21 @@
 <body>
   <div class="app">
     <header class="app-header">
-      <h1>賞味期限・ロット ライブOCRルーペ</h1>
-      <p>枠内付近の印字を数秒ごとに読み取り。上下逆印字にも対応し、履歴も保存します。</p>
+      <h1>賞味期限・ロット ライブOCRルーペ（OCR.space版）</h1>
+      <p>枠内付近の印字を数秒ごとに読み取り。上下逆印字にも挑戦し、履歴も保存します。</p>
     </header>
 
     <!-- カメラ -->
     <section class="card">
       <h2>
         カメラ
-        <span class="badge">スマホ用</span>
+        <span class="badge">Web版</span>
       </h2>
       <div class="camera-wrap">
         <video id="preview" autoplay playsinline></video>
         <div class="guide-box"></div>
         <div class="guide-text">
-          中央〜枠あたりに<br>賞味期限とロットを入れてください<br>（上下逆さもOK）
+          中央〜枠あたりに<br>賞味期限とロットを入れてください<br>（上下逆さもテスト）
         </div>
       </div>
 
@@ -319,6 +318,9 @@
   <canvas id="captureCanvas"></canvas>
 
   <script>
+    // ★ OCR.space の APIキー（実験用途推奨・公開注意）
+    const OCR_SPACE_API_KEY = "K88740512688957";
+
     const video = document.getElementById("preview");
     const statusEl = document.getElementById("status");
     const expiryEl = document.getElementById("expiryValue");
@@ -392,19 +394,6 @@
       }
     }
 
-    function preprocess(ctx, w, h) {
-      const img = ctx.getImageData(0, 0, w, h);
-      const d = img.data;
-      const thr = 160;
-      for (let i = 0; i < d.length; i += 4) {
-        const r = d[i], g = d[i+1], b = d[i+2];
-        const v = 0.299*r + 0.587*g + 0.114*b;
-        const val = v < thr ? 0 : 255;
-        d[i] = d[i+1] = d[i+2] = val;
-      }
-      ctx.putImageData(img, 0, 0);
-    }
-
     function extractExpiry(text) {
       const rules = [
         /\b(\d{4}[.\-/]\d{1,2}[.\-/]\d{1,2})\b/,
@@ -472,7 +461,11 @@
       lastHistoryKey = key;
 
       const now = new Date();
-      const timeLabel = now.toLocaleTimeString("ja-JP", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+      const timeLabel = now.toLocaleTimeString("ja-JP", {
+        hour: "2-digit",
+        minute: "2-digit",
+        second: "2-digit"
+      });
 
       const entry = {
         time: timeLabel,
@@ -522,7 +515,7 @@
     function saveHistory() {
       if (!window.localStorage) return;
       try {
-        localStorage.setItem("expiryLotHistory", JSON.stringify(history));
+        localStorage.setItem("expiryLotHistory_ocrspace", JSON.stringify(history));
       } catch (e) {
         console.warn("履歴保存に失敗:", e);
       }
@@ -534,7 +527,7 @@
         return;
       }
       try {
-        const raw = localStorage.getItem("expiryLotHistory");
+        const raw = localStorage.getItem("expiryLotHistory_ocrspace");
         if (raw) {
           history = JSON.parse(raw) || [];
         }
@@ -544,34 +537,50 @@
       renderHistory();
     }
 
+    // ▼ OCR.space を叩く関数
+    async function callOcrSpace(base64) {
+      const formData = new FormData();
+      formData.append("base64Image", "data:image/png;base64," + base64);
+      formData.append("language", "jpn");   // 必要に応じて "eng" や "jpn+eng" も試せます
+      formData.append("isOverlayRequired", "false");
+      formData.append("apikey", OCR_SPACE_API_KEY);
+
+      const res = await fetch("https://api.ocr.space/parse/image", {
+        method: "POST",
+        body: formData
+      });
+
+      const json = await res.json();
+      const result = json.ParsedResults && json.ParsedResults[0];
+      const text = result ? result.ParsedText || "" : "";
+      return text;
+    }
+
+    // 0度と180度の両方でOCR.spaceを試し、テキストを結合
     async function recognizeWithOrientations(roiCanvas) {
-      async function runOnCanvas(canvas) {
-        const ctx = canvas.getContext("2d");
-        preprocess(ctx, canvas.width, canvas.height);
-        const { data: { text } } = await Tesseract.recognize(
-          canvas,
-          "eng",
-          { tessedit_char_whitelist: "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz.-/" }
-        );
-        const cleaned = text.trim();
-        const expiryCandidate = extractExpiry(cleaned);
-        const lotCandidate = extractLot(cleaned, expiryCandidate);
-        return { cleaned, expiryCandidate, lotCandidate };
-      }
-
       // 0度
-      const baseCanvas = document.createElement("canvas");
-      baseCanvas.width = roiCanvas.width;
-      baseCanvas.height = roiCanvas.height;
-      baseCanvas.getContext("2d").drawImage(roiCanvas, 0, 0);
-      let result0 = await runOnCanvas(baseCanvas);
-      let combinedText = result0.cleaned;
-
-      if (result0.expiryCandidate || result0.lotCandidate) {
-        return { cleaned: combinedText, expiryCandidate: result0.expiryCandidate, lotCandidate: result0.lotCandidate };
+      const dataUrl0 = roiCanvas.toDataURL("image/png");
+      const base640 = dataUrl0.replace(/^data:image\/png;base64,/, "");
+      let text0 = "";
+      try {
+        text0 = (await callOcrSpace(base640)).trim();
+      } catch (e) {
+        console.warn("OCR.space 0度でエラー:", e);
       }
 
-      // 180度（上下逆）
+      // まず0度の結果から候補を探す
+      let expiry0 = extractExpiry(text0);
+      let lot0 = extractLot(text0, expiry0);
+
+      if (expiry0 || lot0) {
+        return {
+          cleaned: text0,
+          expiryCandidate: expiry0,
+          lotCandidate: lot0
+        };
+      }
+
+      // 見つからなければ 180度回転して再チャレンジ
       const rotCanvas = document.createElement("canvas");
       rotCanvas.width = roiCanvas.width;
       rotCanvas.height = roiCanvas.height;
@@ -580,13 +589,23 @@
       ctxRot.rotate(Math.PI);
       ctxRot.drawImage(roiCanvas, 0, 0);
 
-      let result180 = await runOnCanvas(rotCanvas);
-      combinedText += (result180.cleaned ? "\n" + result180.cleaned : "");
+      const dataUrl180 = rotCanvas.toDataURL("image/png");
+      const base64180 = dataUrl180.replace(/^data:image\/png;base64,/, "");
+      let text180 = "";
+      try {
+        text180 = (await callOcrSpace(base64180)).trim();
+      } catch (e) {
+        console.warn("OCR.space 180度でエラー:", e);
+      }
+
+      const combined = [text0, text180].filter(Boolean).join("\n");
+      const expiry180 = extractExpiry(combined);
+      const lot180 = extractLot(combined, expiry180);
 
       return {
-        cleaned: combinedText,
-        expiryCandidate: result180.expiryCandidate,
-        lotCandidate: result180.lotCandidate
+        cleaned: combined,
+        expiryCandidate: expiry180,
+        lotCandidate: lot180
       };
     }
 
@@ -681,7 +700,7 @@
       toggleLiveBtn.classList.remove("btn-secondary");
       toggleLiveBtn.classList.add("btn-primary");
       setStatus("ライブOCR動作中。中央付近で1〜2秒静止すると安定します。");
-      liveTimer = setInterval(runOCROnce, 3000); // 3秒ごと
+      liveTimer = setInterval(runOCROnce, 4000); // 4秒ごと（API負荷軽減のため少し長め）
     }
 
     function stopLiveOCR() {
