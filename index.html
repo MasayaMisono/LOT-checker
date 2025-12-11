@@ -10,7 +10,7 @@
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
       margin: 0;
       padding: 12px;
-      background: #f7f7f7; /* スマホアプリ風の薄いグレー */
+      background: #f7f7f7;
       color: #222;
     }
 
@@ -26,7 +26,7 @@
       padding: 14px;
       margin-bottom: 14px;
       border: 1px solid #e5e5e5;
-      box-shadow: 0 1px 4px rgba(0,0,0,0.08);
+      box-shadow: 0 1px 4px rgba(0,0,0,0.06);
     }
 
     #video {
@@ -43,7 +43,7 @@
       padding: 10px 16px;
       font-size: 0.9rem;
       cursor: pointer;
-      background: #007aff; /* iOS系ブルー */
+      background: #007aff;
       color: white;
       font-weight: 600;
       margin-right: 6px;
@@ -104,6 +104,9 @@
 <body>
 
 <h1>賞味・ロット OCR ルーペ</h1>
+<p style="font-size:0.8rem; color:#777; margin:4px 0 10px;">
+  カメラで印字に狙いを合わせて、「読み取り」を押した瞬間だけOCRします。
+</p>
 
 <div class="card">
   <h2 style="font-size:1rem; margin:0 0 8px;">カメラ</h2>
@@ -164,12 +167,13 @@
   let audioCtx = null;
   let ttsEnabled = true;
 
-  // --- ビープ音（開始と終了で2回鳴る） ---
+  // --- ビープ音（短い「ピ」） ---
   function playBeep() {
     try {
-      if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      if (!audioCtx) {
+        audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      }
       const ctx = audioCtx;
-
       const osc = ctx.createOscillator();
       const gain = ctx.createGain();
 
@@ -184,7 +188,6 @@
       osc.start(now);
       gain.gain.exponentialRampToValueAtTime(0.001, now + 0.15);
       osc.stop(now + 0.18);
-
     } catch (e) {
       console.warn("Beep error:", e);
     }
@@ -206,19 +209,23 @@
   function speakText(text) {
     if (!ttsEnabled) return;
     if (!("speechSynthesis" in window)) return;
+    if (!text) return;
 
     speechSynthesis.cancel();
 
     const u = new SpeechSynthesisUtterance(text);
     u.lang = "ja-JP";
     u.rate = 1.05;
+    u.pitch = 1.0;
     speechSynthesis.speak(u);
   }
 
   // --- カメラ開始 ---
   async function startCamera() {
     try {
-      if (stream) stream.getTracks().forEach(t => t.stop());
+      if (stream) {
+        stream.getTracks().forEach(t => t.stop());
+      }
 
       stream = await navigator.mediaDevices.getUserMedia({
         video: { facingMode: "environment" },
@@ -228,7 +235,7 @@
       video.srcObject = stream;
       await video.play();
 
-      statusText.textContent = "カメラ起動中（狙って読み取りを押してください）";
+      statusText.textContent = "カメラ起動中（印字を枠内に入れて読み取りを押してください）";
       stopBtn.disabled = false;
 
     } catch (err) {
@@ -236,83 +243,106 @@
     }
   }
 
-  // --- 停止 ---
+  // --- カメラ停止 ---
   function stopCamera() {
-    if (stream) stream.getTracks().forEach(t => t.stop());
-    stream = null;
+    if (stream) {
+      stream.getTracks().forEach(t => t.stop());
+      stream = null;
+    }
     statusText.textContent = "カメラ停止中";
     stopBtn.disabled = true;
   }
 
-  // --- OCR処理（手動トリガーのみ） ---
+  // --- 読み取りボタン：押した瞬間にピ、その後OCR ---
   async function captureAndOcr() {
     if (!stream || !video.videoWidth) {
       statusText.textContent = "カメラを開始してください";
       return;
     }
 
-    playBeep(); // ★ 押した瞬間の「ピ」
+    // 1回目の「ピ」
+    playBeep();
 
     const w = 480;
     const h = Math.round(video.videoHeight * (w / video.videoWidth));
     canvas.width = w;
     canvas.height = h;
 
-    canvas.getContext("2d").drawImage(video, 0, 0, w, h);
+    const ctx = canvas.getContext("2d");
+    ctx.drawImage(video, 0, 0, w, h);
 
     statusText.textContent = "OCR処理中…";
 
     try {
-      const blob = await new Promise(r => canvas.toBlob(r, "image/png"));
+      const blob = await new Promise(resolve => canvas.toBlob(resolve, "image/png", 0.9));
 
-      const fd = new FormData();
-      fd.append("apikey", API_KEY);
-      fd.append("language", "jpn");
-      fd.append("scale", "true");
-      fd.append("OCREngine", "2");
-      fd.append("file", blob);
+      const formData = new FormData();
+      formData.append("apikey", API_KEY);
+      formData.append("language", "jpn");
+      formData.append("isOverlayRequired", "false");
+      formData.append("scale", "true");
+      formData.append("OCREngine", "2");
+      formData.append("file", blob, "capture.png");
 
       const res = await fetch("https://api.ocr.space/parse/image", {
         method: "POST",
-        body: fd
+        body: formData
       });
 
-      const json = await res.json();
-      const text = json?.ParsedResults?.[0]?.ParsedText || "";
+      if (!res.ok) {
+        throw new Error("HTTP " + res.status);
+      }
 
+      const data = await res.json();
+
+      if (data.IsErroredOnProcessing) {
+        const msg = Array.isArray(data.ErrorMessage)
+          ? data.ErrorMessage.join(", ")
+          : (data.ErrorMessage || "OCR error");
+        throw new Error(msg);
+      }
+
+      const text = (data.ParsedResults && data.ParsedResults[0] && data.ParsedResults[0].ParsedText) || "";
       handleText(text);
 
-      statusText.textContent = "OCR完了";
-      playBeep(); // ★ 結果反映時の「ピ」
+      statusText.textContent = "OCR完了（再度読み取りできます）";
+
+      // 2回目の「ピ」
+      playBeep();
 
     } catch (e) {
       rawOut.textContent = "OCRエラー：" + e.message;
-      statusText.textContent = "エラーが発生";
+      statusText.textContent = "エラーが発生しました";
+      if (ttsEnabled) {
+        speakText("エラーが発生しました");
+      }
     }
   }
 
-  // --- 結果処理 ---
+  // --- OCR結果処理 ---
   function handleText(text) {
     rawOut.textContent = text || "-";
+
     const lines = text.split("\n").map(l => l.trim()).filter(Boolean);
 
     const dateRegex = /(\d{2,4})[.\-\/年月](\d{1,2})[.\-\/月日](\d{1,2})/;
 
     let expiry = lines.find(l => dateRegex.test(l)) || null;
-    let lot = lines.find(l => /lot|ロット/i.test(l)) ||
-              lines.find(l => /[A-Za-z].*\d|\d.*[A-Za-z]/.test(l)) ||
-              null;
+    let lot =
+      lines.find(l => /lot|ロット/i.test(l)) ||
+      lines.find(l => /[A-Za-z].*\d|\d.*[A-Za-z]/.test(l)) ||
+      null;
 
     expiryOut.textContent = expiry || "未検出";
     lotOut.textContent = lot || "未検出";
 
-    // 読み上げロジック
+    // 読み上げ：未検出のときは日本語で
     if (expiry) {
-      speakText("読み取り。" + spellOut(expiry));
+      speakText("読み取り。 " + spellOut(expiry));
     } else if (lot) {
-      speakText("読み取り。" + spellOut(lot));
+      speakText("読み取り。 " + spellOut(lot));
     } else {
-      speakText("Not detected");
+      speakText("読み取りできませんでした");
     }
 
     addHistory({
@@ -333,14 +363,16 @@
       <div style="color:#666; margin-top:4px;">${e.raw}</div>
     `;
     historyEl.prepend(li);
-    if (historyEl.children.length > 10) historyEl.lastChild.remove();
+    if (historyEl.children.length > 10) {
+      historyEl.lastChild.remove();
+    }
   }
 
-  // --- イベント ---
+  // --- イベント設定 ---
   startBtn.addEventListener("click", startCamera);
   stopBtn.addEventListener("click", stopCamera);
   shotBtn.addEventListener("click", captureAndOcr);
-  clearHistBtn.addEventListener("click", () => historyEl.innerHTML = "");
+  clearHistBtn.addEventListener("click", () => { historyEl.innerHTML = ""; });
 
   ttsToggle.addEventListener("click", () => {
     ttsEnabled = !ttsEnabled;
