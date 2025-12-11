@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
   <meta charset="UTF-8" />
-  <title>エーオーアイ・賞味ロットライブOCRルーペ</title>
+  <title>エーオーアイ・賞味ロットOCRルーペ（単発読み取り版）</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <style>
     body {
@@ -22,7 +22,7 @@
       border: 1px solid #1f2937;
     }
 
-    /* ▼ プレビューを半分サイズで表示（最大300px） */
+    /* カメラプレビューはやや小さめ（全体が画面に収まりやすいサイズ） */
     #video {
       width: 100%;
       max-height: 260px;
@@ -46,6 +46,10 @@
     button.secondary {
       background: #374151;
       color: #e5e7eb;
+    }
+    button:disabled {
+      opacity: 0.5;
+      cursor: default;
     }
 
     .output {
@@ -89,7 +93,10 @@
 </head>
 <body>
 
-<h1>エーオーアイ・賞味ロットライブOCRルーペ</h1>
+<h1>エーオーアイ・賞味ロットOCRルーペ</h1>
+<p style="font-size:0.8rem; color:#9ca3af; margin:4px 0 10px;">
+  カメラで狙いを定めて、「読み取り」ボタンを押した瞬間だけOCRします。
+</p>
 
 <div class="card">
   <h2 style="font-size:1rem;">カメラ</h2>
@@ -98,11 +105,11 @@
   <div style="margin-top:8px;">
     <button id="startBtn">カメラ開始 ▶</button>
     <button id="stopBtn" class="secondary" disabled>停止</button>
-    <button id="shotBtn" class="secondary">単発OCR</button>
+    <button id="shotBtn" class="secondary">読み取り</button>
     <button id="ttsToggle" class="secondary">読み上げ ON</button>
   </div>
 
-  <div class="status" id="statusText">待機中</div>
+  <div class="status" id="statusText">カメラ停止中</div>
 </div>
 
 <div class="card">
@@ -145,17 +152,19 @@
   const clearHistBtn = document.getElementById("clearHist");
 
   let stream = null;
-  let timerId = null;
   let audioCtx = null;
   let ttsEnabled = true;
 
   // --- ビープ音 ---
   function playBeep() {
     try {
-      if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      if (!audioCtx) {
+        audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      }
       const ctx = audioCtx;
       const osc = ctx.createOscillator();
       const gain = ctx.createGain();
+
       osc.type = "sine";
       osc.frequency.value = 1400;
       gain.gain.value = 0.2;
@@ -168,28 +177,32 @@
       gain.gain.setValueAtTime(0.2, now);
       gain.gain.exponentialRampToValueAtTime(0.001, now + 0.18);
       osc.stop(now + 0.2);
-
-    } catch (e) { console.warn("ビープ失敗:", e); }
+    } catch (e) {
+      console.warn("ビープ失敗:", e);
+    }
   }
 
-  // --- 英数字を1文字ずつ読み上げ用に整形 ---
+  // --- 英数字を1文字ずつ読み上げやすく整形 ---
   function spellOut(text) {
     if (!text) return text;
-
-    return text.split("").map(ch => {
-      if (/[A-Za-z]/.test(ch)) {
-        return ch.toUpperCase();
-      } else if (/[0-9]/.test(ch)) {
-        return ch;
-      }
-      return ch;
-    }).join(" ");
+    return text
+      .split("")
+      .map(ch => {
+        if (/[A-Za-z]/.test(ch)) {
+          return ch.toUpperCase(); // アルファベットは大文字に統一
+        } else if (/[0-9]/.test(ch)) {
+          return ch;               // 数字はそのまま
+        }
+        return ch;                 // その他（日本語等）はそのまま
+      })
+      .join(" ");
   }
 
   // --- 読み上げ ---
   function speakText(text) {
     if (!ttsEnabled) return;
     if (!("speechSynthesis" in window)) return;
+    if (!text) return;
 
     window.speechSynthesis.cancel();
 
@@ -197,25 +210,24 @@
     u.lang = "ja-JP";
     u.rate = 1.05;
     u.pitch = 1.0;
-
     speechSynthesis.speak(u);
   }
 
   // --- カメラ開始 ---
   async function startCamera() {
     try {
-      if (stream) stream.getTracks().forEach(t => t.stop());
+      if (stream) {
+        stream.getTracks().forEach(t => t.stop());
+      }
       stream = await navigator.mediaDevices.getUserMedia({
         video: { facingMode: "environment" },
         audio: false
       });
       video.srcObject = stream;
-
       await video.play();
-      statusText.textContent = "ライブOCR：起動中";
-      stopBtn.disabled = false;
 
-      startAutoCapture();
+      statusText.textContent = "カメラ起動中（狙って「読み取り」ボタンを押してください）";
+      stopBtn.disabled = false;
     } catch (err) {
       statusText.textContent = "カメラエラー：" + err.message;
     }
@@ -223,42 +235,39 @@
 
   // --- カメラ停止 ---
   function stopCamera() {
-    if (timerId) clearInterval(timerId);
-    if (stream) stream.getTracks().forEach(t => t.stop());
-
-    statusText.textContent = "停止中";
+    if (stream) {
+      stream.getTracks().forEach(t => t.stop());
+      stream = null;
+    }
+    statusText.textContent = "カメラ停止中";
     stopBtn.disabled = true;
   }
 
-  // --- 自動OCR（5秒ごと） ---
-  function startAutoCapture() {
-    if (timerId) clearInterval(timerId);
-    timerId = setInterval(() => captureAndOcr(false), 5000);
-  }
-
-  // --- OCR処理 ---
-  async function captureAndOcr(isManual) {
-    if (!video.videoWidth) return;
+  // --- 「読み取り」ボタン押下でのみOCR ---
+  async function captureAndOcr() {
+    if (!stream || !video.videoWidth) {
+      statusText.textContent = "カメラが起動していません";
+      return;
+    }
 
     const w = 480;
     const h = Math.round(video.videoHeight * (w / video.videoWidth));
-
     canvas.width = w;
     canvas.height = h;
 
     const ctx = canvas.getContext("2d");
     ctx.drawImage(video, 0, 0, w, h);
 
-    statusText.textContent = isManual ? "単発OCR中…" : "OCR中…";
+    statusText.textContent = "OCR処理中…";
 
     try {
-      const blob = await new Promise(r => canvas.toBlob(r, "image/png"));
+      const blob = await new Promise(resolve => canvas.toBlob(resolve, "image/png"));
       const formData = new FormData();
       formData.append("apikey", API_KEY);
       formData.append("language", "jpn");
       formData.append("scale", "true");
       formData.append("OCREngine", "2");
-      formData.append("file", blob, "cap.png");
+      formData.append("file", blob, "capture.png");
 
       const res = await fetch("https://api.ocr.space/parse/image", {
         method: "POST",
@@ -269,22 +278,24 @@
       const text = json?.ParsedResults?.[0]?.ParsedText || "";
       handleText(text);
 
-      statusText.textContent = "待機中";
+      statusText.textContent = "OCR完了（再度読み取りできます）";
     } catch (e) {
       rawOut.textContent = "OCRエラー：" + e.message;
-      statusText.textContent = "エラー";
+      statusText.textContent = "エラーが発生しました";
     }
   }
 
-  // --- 認識テキスト処理 ---
+  // --- OCR結果処理 ---
   function handleText(text) {
     rawOut.textContent = text || "-";
 
     const lines = text.split("\n").map(v => v.trim()).filter(Boolean);
 
+    // とりあえず「日付っぽい行」を賞味期限候補に
     const dateRegex = /(\d{2,4})[.\-\/年月](\d{1,2})[.\-\/月日](\d{1,2})/;
     let expiry = lines.find(l => dateRegex.test(l)) || "未検出";
 
+    // 「LOT」「ロット」 or 英数字混在行をロット候補に
     let lot = lines.find(l => /lot|ロット/i.test(l));
     if (!lot) {
       lot = lines.find(l => /[A-Za-z].*\d|\d.*[A-Za-z]/.test(l));
@@ -294,16 +305,16 @@
     expiryOut.textContent = expiry;
     lotOut.textContent = lot;
 
-    // --- フィードバック音 + 読み上げ ---
+    // --- フィードバック音 & 読み上げ ---
     playBeep();
 
     const summary = expiry !== "未検出" ? expiry : lot;
-    if (summary) {
+    if (summary && ttsEnabled) {
       const spoken = spellOut(summary);
       speakText("読み取り。" + spoken);
     }
 
-    // --- 履歴保存 ---
+    // --- 履歴 ---
     addHistory({
       time: new Date().toLocaleTimeString(),
       expiry,
@@ -313,23 +324,25 @@
   }
 
   // --- 履歴処理 ---
-  function addHistory(x) {
+  function addHistory(entry) {
     const li = document.createElement("li");
     li.innerHTML = `
-      <span class="tag">${x.time}</span>
-      <span class="tag">賞味: ${x.expiry}</span>
-      <span class="tag">ロット: ${x.lot}</span>
-      <div style="color:#9ca3af;">${x.raw}</div>
+      <span class="tag">${entry.time}</span>
+      <span class="tag">賞味: ${entry.expiry}</span>
+      <span class="tag">ロット: ${entry.lot}</span>
+      <div style="color:#9ca3af;">${entry.raw}</div>
     `;
     historyEl.prepend(li);
-    if (historyEl.children.length > 10) historyEl.lastChild.remove();
+    if (historyEl.children.length > 10) {
+      historyEl.lastChild.remove();
+    }
   }
 
-  // --- イベント ---
+  // --- イベント設定 ---
   startBtn.addEventListener("click", startCamera);
   stopBtn.addEventListener("click", stopCamera);
-  shotBtn.addEventListener("click", () => captureAndOcr(true));
-  clearHistBtn.addEventListener("click", () => historyEl.innerHTML = "");
+  shotBtn.addEventListener("click", captureAndOcr);
+  clearHistBtn.addEventListener("click", () => { historyEl.innerHTML = ""; });
 
   ttsToggle.addEventListener("click", () => {
     ttsEnabled = !ttsEnabled;
