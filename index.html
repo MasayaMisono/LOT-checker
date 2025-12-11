@@ -2,747 +2,305 @@
 <html lang="ja">
 <head>
   <meta charset="UTF-8" />
-  <title>エーオーアイ・ライブOCRルーペ（OCR.space版）</title>
+  <title>エーオーアイ・賞味ロットライブOCRルーペ</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <meta name="description" content="スマホカメラで賞味期限・ロット印字をライブOCRし、大きく表示＆読み上げしつつ履歴も保存するツール（OCR.spaceエンジン版）。" />
-
-  <!-- ※ Tesseract.js は使用しないので削除しました -->
-
   <style>
-    :root {
-      --bg: #f3f4f6;
-      --card-bg: #ffffff;
-      --accent: #0ea5e9;
-      --accent-soft: #e0f2fe;
-      --accent-secondary: #22c55e;
-      --accent-lot: #6366f1;
-      --text-main: #111827;
-      --text-sub: #6b7280;
-      --error: #ef4444;
-      --radius-lg: 16px;
-      --shadow-soft: 0 8px 20px rgba(15, 23, 42, 0.12);
-    }
-    * { box-sizing: border-box; }
-
     body {
-      margin: 0;
-      padding: 12px;
       font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-      background: var(--bg);
-      color: var(--text-main);
-    }
-
-    .app {
-      max-width: 540px;
-      margin: 0 auto;
-    }
-
-    .app-header {
-      padding: 4px 4px 8px;
-    }
-    .app-header h1 {
       margin: 0;
-      font-size: 1.2rem;
-      font-weight: 700;
-    }
-    .app-header p {
-      margin: 2px 0 0;
-      font-size: 0.8rem;
-      color: var(--text-sub);
-    }
-
-    .card {
-      background: var(--card-bg);
-      border-radius: var(--radius-lg);
-      padding: 14px 12px;
-      margin-top: 10px;
-      box-shadow: var(--shadow-soft);
-      border: 1px solid #e5e7eb;
-    }
-    .card h2 {
-      margin: 0 0 8px;
-      font-size: 0.95rem;
-      font-weight: 600;
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      color: #0f172a;
-    }
-
-    .badge {
-      font-size: 0.7rem;
-      padding: 2px 8px;
-      border-radius: 999px;
-      background: var(--accent-soft);
-      color: #0369a1;
-      border: 1px solid #bae6fd;
-    }
-
-    .camera-wrap {
-      position: relative;
-      width: 100%;
-      aspect-ratio: 3 / 4;
+      padding: 16px;
       background: #0f172a;
-      border-radius: 12px;
-      overflow: hidden;
-    }
-
-    video {
-      width: 100%;
-      height: 100%;
-      object-fit: cover;
-      background: #000;
-    }
-
-    /* 認識枠は目安。内部的には中央広めのエリアを使う */
-    .guide-box {
-      position: absolute;
-      top: 35%;
-      left: 5%;
-      width: 90%;
-      height: 40%;
-      border: 3px solid rgba(14,165,233,0.9);
-      border-radius: 14px;
-      pointer-events: none;
-      box-shadow: 0 0 0 9999px rgba(0,0,0,0.30);
-    }
-
-    .guide-text {
-      position: absolute;
-      top: 5%;
-      left: 50%;
-      transform: translateX(-50%);
-      font-size: 0.75rem;
       color: #e5e7eb;
-      background: rgba(15, 23, 42, 0.85);
-      padding: 4px 10px;
-      border-radius: 999px;
-      text-align: center;
-      line-height: 1.3;
     }
-
-    .action-row {
-      margin-top: 10px;
-      display: flex;
-      flex-wrap: wrap;
-      gap: 8px;
-    }
-
-    button {
-      flex: 1 1 calc(50% - 4px);
-      padding: 10px;
-      border-radius: 999px;
-      border: none;
-      font-size: 0.85rem;
-      font-weight: 600;
-      cursor: pointer;
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      gap: 4px;
-      transition: 0.08s;
-    }
-
-    .btn-primary {
-      background: var(--accent);
-      color: white;
-      box-shadow: 0 8px 16px rgba(14,165,233,0.35);
-    }
-    .btn-secondary {
-      background: #e5e7eb;
-      color: #111827;
-      box-shadow: 0 6px 14px rgba(15,23,42,0.1);
-    }
-    .btn-full {
-      flex: 1 1 100%;
-    }
-    .btn-danger {
-      background: #fee2e2;
-      color: #b91c1c;
-    }
-
-    button:active {
-      transform: translateY(1px);
-      box-shadow: 0 4px 10px rgba(0,0,0,0.2);
-      opacity: 0.96;
-    }
-
-    .status {
-      margin-top: 6px;
-      font-size: 0.78rem;
-      color: var(--text-sub);
-      min-height: 1.2em;
-    }
-    .status-error {
-      color: var(--error);
-    }
-
-    .result-label {
-      font-size: 0.8rem;
-      color: var(--text-sub);
-      margin-top: 4px;
-    }
-
-    .expiry-value {
-      font-size: 2.2rem;
-      font-weight: 900;
-      letter-spacing: 0.14em;
-      text-align: center;
-      margin: 10px 0;
-      padding: 12px 8px;
-      border-radius: 14px;
-      border: 2px solid var(--accent-secondary);
-      background: #ecfdf5;
-      color: #065f46;
-    }
-
-    .lot-value {
-      font-size: 1.5rem;
-      font-weight: 800;
-      letter-spacing: 0.12em;
-      text-align: center;
-      margin: 8px 0;
-      padding: 10px 8px;
+    h1 { font-size: 1.2rem; margin-bottom: 4px; }
+    h2 { font-size: 1rem; margin-top: 16px; margin-bottom: 4px; }
+    .card {
+      background: #020617;
       border-radius: 12px;
-      border: 2px solid var(--accent-lot);
-      background: #eef2ff;
-      color: #312e81;
-      word-break: break-all;
+      padding: 12px 14px;
+      box-shadow: 0 10px 30px rgba(0,0,0,0.45);
+      margin-bottom: 16px;
+      border: 1px solid #1f2937;
     }
-
-    .raw-text {
-      font-size: 0.78rem;
-      color: var(--text-sub);
+    #video {
+      width: 100%;
+      max-height: 60vh;
+      background: #111827;
+      border-radius: 12px;
+    }
+    button {
+      border: none;
+      border-radius: 999px;
+      padding: 10px 18px;
+      font-size: 0.9rem;
+      cursor: pointer;
+      background: #22c55e;
+      color: #02120a;
+      font-weight: 600;
+      margin-right: 8px;
+    }
+    button.secondary {
+      background: #374151;
+      color: #e5e7eb;
+    }
+    button:disabled {
+      opacity: 0.5;
+      cursor: default;
+    }
+    .label {
+      font-size: 0.75rem;
+      color: #9ca3af;
+      margin-bottom: 4px;
+    }
+    .output {
+      min-height: 1.5em;
+      padding: 4px 6px;
+      border-radius: 6px;
+      background: #020617;
+      border: 1px solid #111827;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+      font-size: 0.8rem;
       white-space: pre-wrap;
       word-break: break-all;
-      border-top: 1px solid #e5e7eb;
+    }
+    .status {
+      font-size: 0.8rem;
+      color: #a5b4fc;
       margin-top: 6px;
-      padding-top: 6px;
-      max-height: 6em;
-      overflow-y: auto;
-      background: #f9fafb;
-      border-radius: 8px;
-      padding: 6px;
     }
-
-    .history-list {
+    ul.history {
       list-style: none;
-      padding: 0;
-      margin: 8px 0 0;
-      max-height: 180px;
-      overflow-y: auto;
-    }
-    .history-item {
-      display: flex;
-      flex-direction: column;
-      padding: 6px 8px;
-      border-radius: 10px;
-      border: 1px solid #e5e7eb;
-      background: #f9fafb;
+      padding-left: 0;
+      margin: 0;
       font-size: 0.78rem;
-      margin-bottom: 6px;
     }
-    .history-time {
-      color: var(--text-sub);
-      margin-bottom: 2px;
+    ul.history li {
+      border-bottom: 1px solid #111827;
+      padding: 4px 0;
     }
-    .history-expiry {
-      font-weight: 700;
-      color: #065f46;
+    .tag {
+      display: inline-block;
+      padding: 2px 6px;
+      font-size: 0.7rem;
+      border-radius: 999px;
+      background: #111827;
+      color: #93c5fd;
+      margin-right: 4px;
     }
-    .history-lot {
-      color: #312e81;
-    }
-
-    canvas { display: none; }
   </style>
 </head>
 <body>
-  <div class="app">
-    <header class="app-header">
-      <h1>エーオーアイ・賞味ロットライブOCRルーペ（OCR.space版）</h1>
-      <p>枠内付近の印字を数秒ごとに読み取り。上下逆印字にも挑戦し、履歴も保存します。</p>
-    </header>
+  <h1>エーオーアイ・賞味ロットライブOCRルーペ（OCR.space版）</h1>
+  <p style="font-size:0.85rem; color:#9ca3af; margin-bottom:12px;">
+    枠内付近の印字を数秒ごとに読み取り。上下逆印字にも挑戦し、履歴も保存します。
+  </p>
 
-    <!-- カメラ -->
-    <section class="card">
-      <h2>
-        カメラ
-        <span class="badge">Web版</span>
-      </h2>
-      <div class="camera-wrap">
-        <video id="preview" autoplay playsinline></video>
-        <div class="guide-box"></div>
-        <div class="guide-text">
-          中央〜枠あたりに<br>賞味期限とロットを入れてください<br>（上下逆さもテスト）
-        </div>
-      </div>
-
-      <div class="action-row">
-        <button id="startCamBtn" class="btn-primary btn-full">📷 カメラを開始 / 再接続</button>
-        <button id="toggleLiveBtn" class="btn-secondary">▶ ライブOCR：停止中</button>
-        <button id="shotBtn" class="btn-secondary">🔍 今だけ再解析</button>
-      </div>
-
-      <div id="status" class="status"></div>
-    </section>
-
-    <!-- 結果 -->
-    <section class="card">
-      <h2>読み取り結果</h2>
-
-      <div class="result-label">賞味期限候補（安定すると更新）</div>
-      <div id="expiryValue" class="expiry-value">未読み取り</div>
-
-      <div class="result-label">ロット番号候補</div>
-      <div id="lotValue" class="lot-value">未読み取り</div>
-
-      <div class="result-label">生テキスト（参照用）</div>
-      <div id="rawText" class="raw-text">-</div>
-    </section>
-
-    <!-- 履歴 -->
-    <section class="card">
-      <h2>
-        読み取り履歴
-        <span class="badge">最新10件</span>
-      </h2>
-      <div class="action-row" style="margin-top:4px;">
-        <button id="clearHistoryBtn" class="btn-danger btn-full">🧹 履歴をクリア</button>
-      </div>
-      <ul id="historyList" class="history-list"></ul>
-    </section>
+  <div class="card">
+    <h2>カメラ Web版</h2>
+    <p style="font-size:0.8rem; color:#9ca3af;">
+      中央〜枠あたりに賞味期限とロットを入れてください（上下逆さテストも可）
+    </p>
+    <video id="video" playsinline autoplay muted></video>
+    <div style="margin-top:8px;">
+      <button id="startBtn">カメラを開始 / 再接続 ▶</button>
+      <button id="stopBtn" class="secondary" disabled>ライブOCR：停止中</button>
+      <button id="shotBtn" class="secondary">今だけ再解析</button>
+    </div>
+    <div class="status" id="statusText">待機中</div>
   </div>
 
-  <!-- OCR用キャンバス -->
-  <canvas id="captureCanvas"></canvas>
+  <div class="card">
+    <h2>読み取り結果</h2>
+    <div class="label">賞味期限候補（安定すると更新）</div>
+    <div id="expiryOut" class="output">未読み取り</div>
+
+    <div class="label" style="margin-top:8px;">ロット番号候補</div>
+    <div id="lotOut" class="output">未読み取り</div>
+
+    <div class="label" style="margin-top:8px;">生テキスト（参照用）</div>
+    <div id="rawOut" class="output">-</div>
+  </div>
+
+  <div class="card">
+    <h2>読み取り履歴 最新10件</h2>
+    <div style="margin-bottom:6px;">
+      <button id="clearHist" class="secondary" style="padding:4px 10px; font-size:0.75rem;">履歴をクリア</button>
+    </div>
+    <ul id="history" class="history"></ul>
+  </div>
+
+  <canvas id="canvas" style="display:none;"></canvas>
 
   <script>
-    // ★ OCR.space の APIキー（実験用途推奨・公開注意）
-    const OCR_SPACE_API_KEY = "K88740512688957";
+    const API_KEY = "K88740512688957"; // 御園さんの OCR.space API KEY（公開リポジトリなら本当は隠したい）
 
-    const video = document.getElementById("preview");
-    const statusEl = document.getElementById("status");
-    const expiryEl = document.getElementById("expiryValue");
-    const lotEl = document.getElementById("lotValue");
-    const rawTextEl = document.getElementById("rawText");
-    const captureCanvas = document.getElementById("captureCanvas");
-    const startCamBtn = document.getElementById("startCamBtn");
-    const toggleLiveBtn = document.getElementById("toggleLiveBtn");
+    const video = document.getElementById("video");
+    const canvas = document.getElementById("canvas");
+    const startBtn = document.getElementById("startBtn");
+    const stopBtn = document.getElementById("stopBtn");
     const shotBtn = document.getElementById("shotBtn");
-    const historyListEl = document.getElementById("historyList");
-    const clearHistoryBtn = document.getElementById("clearHistoryBtn");
+    const statusText = document.getElementById("statusText");
+    const expiryOut = document.getElementById("expiryOut");
+    const lotOut = document.getElementById("lotOut");
+    const rawOut = document.getElementById("rawOut");
+    const historyEl = document.getElementById("history");
+    const clearHistBtn = document.getElementById("clearHist");
 
     let stream = null;
-    let isRecognizing = false;
-    let liveTimer = null;
-    let liveOCR = false;
-
-    const expiryState = { last: "", stableCount: 0, displayed: "" };
-    const lotState = { last: "", stableCount: 0, displayed: "" };
-    let lastSpokenExpiry = "";
-    let lastSpokenLot = "";
-    let history = [];
-    let lastHistoryKey = "";
-
-    function setStatus(msg, isError = false) {
-      statusEl.textContent = msg;
-      statusEl.classList.toggle("status-error", isError);
-    }
-
-    function speakDigits(label, value) {
-      if (!("speechSynthesis" in window) || !value) return;
-      const map = {
-        "0": "ゼロ","1": "イチ","2": "ニ","3": "サン","4": "ヨン",
-        "5": "ゴ","6": "ロク","7": "ナナ","8": "ハチ","9": "キュウ"
-      };
-      const digits = value.replace(/[^0-9]/g, "");
-      const spoken = (digits || value)
-        .split("")
-        .map(ch => map[ch] || ch)
-        .join(" ");
-      const u = new SpeechSynthesisUtterance(`${label}、${spoken}`);
-      u.lang = "ja-JP";
-      window.speechSynthesis.cancel();
-      window.speechSynthesis.speak(u);
-    }
+    let timerId = null;
 
     async function startCamera() {
-      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-        setStatus("このブラウザではカメラAPIが使えません。Chrome や Safari の最新バージョンでお試しください。", true);
-        return;
-      }
       try {
         if (stream) {
           stream.getTracks().forEach(t => t.stop());
           stream = null;
         }
-        try {
-          stream = await navigator.mediaDevices.getUserMedia({
-            video: { facingMode: { ideal: "environment" } },
-            audio: false
-          });
-        } catch (errEnv) {
-          console.warn("environmentで失敗、フォールバック:", errEnv);
-          stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
-        }
+        stream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: "environment" },
+          audio: false
+        });
         video.srcObject = stream;
-        setStatus("カメラ接続完了。中央〜枠あたりに印字を入れてください。上下逆の印字もOKです。");
+        await video.play();
+        statusText.textContent = "ライブOCR：起動中（数秒ごとに読み取り）";
+        stopBtn.disabled = false;
+        startAutoCapture();
       } catch (err) {
-        console.error(err);
-        setStatus("カメラが利用できません: " + err.message + "（カメラ許可とHTTPSを確認）", true);
+        statusText.textContent = "カメラ起動エラー：" + err.message;
       }
     }
 
-    function extractExpiry(text) {
-      const rules = [
-        /\b(\d{4}[.\-/]\d{1,2}[.\-/]\d{1,2})\b/,
-        /\b(\d{2}[.\-/]\d{1,2}[.\-/]\d{1,2})\b/,
-        /\b(\d{4}[.\-/]\d{1,2})\b/,
-        /\b(\d{2}[.\-/]\d{1,2})\b/
-      ];
-      const lines = text.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
-      for (const line of lines) {
-        for (const r of rules) {
-          const m = line.match(r);
-          if (m) return m[1];
-        }
+    function stopCamera() {
+      if (timerId) {
+        clearInterval(timerId);
+        timerId = null;
       }
-      return "";
+      if (stream) {
+        stream.getTracks().forEach(t => t.stop());
+        stream = null;
+      }
+      stopBtn.disabled = true;
+      statusText.textContent = "ライブOCR：停止中";
     }
 
-    function extractLot(text, expiryCandidate) {
-      const lines = text.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
-      const expiryNorm = expiryCandidate ? expiryCandidate.replace(/\D/g, "") : "";
-      let best = "";
-      let bestScore = -1;
-
-      for (const line of lines) {
-        if (!line) continue;
-        if (expiryCandidate && line.includes(expiryCandidate)) continue;
-
-        const norm = line.replace(/\D/g, "");
-        if (expiryNorm && norm === expiryNorm) continue;
-
-        const digits = (line.match(/[0-9]/g) || []).length;
-        const letters = (line.match(/[A-Za-z]/g) || []).length;
-        const score = digits * 2 + letters;
-
-        if (score >= 4 && score > bestScore) {
-          bestScore = score;
-          best = line;
-        }
-      }
-      return best;
+    function startAutoCapture() {
+      if (timerId) clearInterval(timerId);
+      timerId = setInterval(() => {
+        captureAndOcr(false);
+      }, 5000); // 5秒ごと
     }
 
-    function updateStableState(state, newValue) {
-      if (!newValue) {
-        state.last = "";
-        state.stableCount = 0;
-        return null;
-      }
-      if (newValue === state.last) {
-        state.stableCount += 1;
-      } else {
-        state.last = newValue;
-        state.stableCount = 1;
-      }
-      if (state.stableCount >= 2 && newValue !== state.displayed) {
-        state.displayed = newValue;
-        return newValue;
-      }
-      return null;
-    }
-
-    function addHistory(expiryVal, lotVal) {
-      const key = (expiryVal || "") + "|" + (lotVal || "");
-      if (!key || key === "|" || key === lastHistoryKey) return;
-      lastHistoryKey = key;
-
-      const now = new Date();
-      const timeLabel = now.toLocaleTimeString("ja-JP", {
-        hour: "2-digit",
-        minute: "2-digit",
-        second: "2-digit"
-      });
-
-      const entry = {
-        time: timeLabel,
-        expiry: expiryVal || "",
-        lot: lotVal || ""
-      };
-
-      history.unshift(entry);
-      if (history.length > 10) history = history.slice(0, 10);
-      saveHistory();
-      renderHistory();
-    }
-
-    function renderHistory() {
-      historyListEl.innerHTML = "";
-      if (history.length === 0) {
-        const li = document.createElement("li");
-        li.textContent = "まだ履歴はありません。";
-        li.style.fontSize = "0.78rem";
-        li.style.color = "var(--text-sub)";
-        historyListEl.appendChild(li);
-        return;
-      }
-      for (const item of history) {
-        const li = document.createElement("li");
-        li.className = "history-item";
-
-        const t = document.createElement("div");
-        t.className = "history-time";
-        t.textContent = item.time;
-
-        const e = document.createElement("div");
-        e.className = "history-expiry";
-        e.textContent = item.expiry ? `賞味期限: ${item.expiry}` : "賞味期限: (なし)";
-
-        const l = document.createElement("div");
-        l.className = "history-lot";
-        l.textContent = item.lot ? `ロット: ${item.lot}` : "ロット: (なし)";
-
-        li.appendChild(t);
-        li.appendChild(e);
-        li.appendChild(l);
-        historyListEl.appendChild(li);
-      }
-    }
-
-    function saveHistory() {
-      if (!window.localStorage) return;
-      try {
-        localStorage.setItem("expiryLotHistory_ocrspace", JSON.stringify(history));
-      } catch (e) {
-        console.warn("履歴保存に失敗:", e);
-      }
-    }
-
-    function loadHistory() {
-      if (!window.localStorage) {
-        renderHistory();
-        return;
-      }
-      try {
-        const raw = localStorage.getItem("expiryLotHistory_ocrspace");
-        if (raw) {
-          history = JSON.parse(raw) || [];
-        }
-      } catch (e) {
-        console.warn("履歴読み込みに失敗:", e);
-      }
-      renderHistory();
-    }
-
-    // ▼ OCR.space を叩く関数
-    async function callOcrSpace(base64) {
-      const formData = new FormData();
-      formData.append("base64Image", "data:image/png;base64," + base64);
-      formData.append("language", "jpn");   // 必要に応じて "eng" や "jpn+eng" も試せます
-      formData.append("isOverlayRequired", "false");
-      formData.append("apikey", OCR_SPACE_API_KEY);
-
-      const res = await fetch("https://api.ocr.space/parse/image", {
-        method: "POST",
-        body: formData
-      });
-
-      const json = await res.json();
-      const result = json.ParsedResults && json.ParsedResults[0];
-      const text = result ? result.ParsedText || "" : "";
-      return text;
-    }
-
-    // 0度と180度の両方でOCR.spaceを試し、テキストを結合
-    async function recognizeWithOrientations(roiCanvas) {
-      // 0度
-      const dataUrl0 = roiCanvas.toDataURL("image/png");
-      const base640 = dataUrl0.replace(/^data:image\/png;base64,/, "");
-      let text0 = "";
-      try {
-        text0 = (await callOcrSpace(base640)).trim();
-      } catch (e) {
-        console.warn("OCR.space 0度でエラー:", e);
-      }
-
-      // まず0度の結果から候補を探す
-      let expiry0 = extractExpiry(text0);
-      let lot0 = extractLot(text0, expiry0);
-
-      if (expiry0 || lot0) {
-        return {
-          cleaned: text0,
-          expiryCandidate: expiry0,
-          lotCandidate: lot0
-        };
-      }
-
-      // 見つからなければ 180度回転して再チャレンジ
-      const rotCanvas = document.createElement("canvas");
-      rotCanvas.width = roiCanvas.width;
-      rotCanvas.height = roiCanvas.height;
-      const ctxRot = rotCanvas.getContext("2d");
-      ctxRot.translate(rotCanvas.width, rotCanvas.height);
-      ctxRot.rotate(Math.PI);
-      ctxRot.drawImage(roiCanvas, 0, 0);
-
-      const dataUrl180 = rotCanvas.toDataURL("image/png");
-      const base64180 = dataUrl180.replace(/^data:image\/png;base64,/, "");
-      let text180 = "";
-      try {
-        text180 = (await callOcrSpace(base64180)).trim();
-      } catch (e) {
-        console.warn("OCR.space 180度でエラー:", e);
-      }
-
-      const combined = [text0, text180].filter(Boolean).join("\n");
-      const expiry180 = extractExpiry(combined);
-      const lot180 = extractLot(combined, expiry180);
-
-      return {
-        cleaned: combined,
-        expiryCandidate: expiry180,
-        lotCandidate: lot180
-      };
-    }
-
-    async function runOCROnce() {
+    async function captureAndOcr(isManual) {
       if (!video.videoWidth || !video.videoHeight) {
-        setStatus("カメラ準備中です…『カメラを開始』を押して少し待ってから試してください。", true);
         return;
       }
-      if (isRecognizing) return;
-      isRecognizing = true;
+      const w = 640;
+      const h = Math.round(video.videoHeight * (w / video.videoWidth));
 
-      const vw = video.videoWidth;
-      const vh = video.videoHeight;
+      canvas.width = w;
+      canvas.height = h;
 
-      captureCanvas.width = vw;
-      captureCanvas.height = vh;
-      const ctx = captureCanvas.getContext("2d");
-      ctx.drawImage(video, 0, 0, vw, vh);
+      const ctx = canvas.getContext("2d");
+      ctx.drawImage(video, 0, 0, w, h);
 
-      // ▼ 認識エリア：画面中央広め（枠より少し広い）
-      const W = vw * 0.9;
-      const H = vh * 0.6;
-      const X = vw * 0.05;
-      const Y = vh * 0.2;
-
-      const scale = 2;
-      const roiCanvas = document.createElement("canvas");
-      roiCanvas.width = W * scale;
-      roiCanvas.height = H * scale;
-      const roiCtx = roiCanvas.getContext("2d");
-      roiCtx.drawImage(captureCanvas, X, Y, W, H, 0, 0, roiCanvas.width, roiCanvas.height);
+      statusText.textContent = (isManual ? "単発OCR中…" : "ライブOCR中…");
 
       try {
-        const { cleaned, expiryCandidate, lotCandidate } = await recognizeWithOrientations(roiCanvas);
-        rawTextEl.textContent = cleaned || "(なし)";
+        const blob = await new Promise(resolve => canvas.toBlob(resolve, "image/png", 0.9));
+        const formData = new FormData();
+        formData.append("apikey", API_KEY);
+        formData.append("language", "jpn");
+        formData.append("isOverlayRequired", "false");
+        formData.append("scale", "true");
+        formData.append("OCREngine", "2");
+        formData.append("file", blob, "frame.png");
 
-        const stableExpiry = updateStableState(expiryState, expiryCandidate);
-        const stableLot = updateStableState(lotState, lotCandidate);
+        const res = await fetch("https://api.ocr.space/parse/image", {
+          method: "POST",
+          body: formData
+        });
 
-        // 賞味期限
-        if (stableExpiry) {
-          expiryEl.textContent = stableExpiry;
-          expiryEl.style.borderColor = "#16a34a";
-          expiryEl.style.backgroundColor = "#dcfce7";
-          if (stableExpiry !== lastSpokenExpiry) {
-            lastSpokenExpiry = stableExpiry;
-            speakDigits("賞味期限", stableExpiry);
-          }
-        } else if (!expiryState.displayed && !expiryCandidate) {
-          expiryEl.textContent = "未読み取り";
-          expiryEl.style.borderColor = "var(--accent-secondary)";
-          expiryEl.style.backgroundColor = "#ecfdf5";
+        if (!res.ok) {
+          throw new Error("HTTP " + res.status);
         }
 
-        // ロット
-        if (stableLot) {
-          lotEl.textContent = stableLot;
-          lotEl.style.borderColor = "#22c55e";
-          if (stableLot !== lastSpokenLot) {
-            lastSpokenLot = stableLot;
-            speakDigits("ロット番号", stableLot);
-          }
-        } else if (!lotState.displayed && !lotCandidate) {
-          lotEl.textContent = "未読み取り";
-          lotEl.style.borderColor = "var(--accent-lot)";
+        const data = await res.json();
+        if (data.IsErroredOnProcessing) {
+          throw new Error(
+            (Array.isArray(data.ErrorMessage) ? data.ErrorMessage.join(", ") : data.ErrorMessage) || "OCR error"
+          );
         }
 
-        // 履歴登録（安定して表示されている値を使う）
-        const histExpiry = expiryState.displayed || expiryCandidate || "";
-        const histLot = lotState.displayed || lotCandidate || "";
-        if (histExpiry || histLot) {
-          addHistory(histExpiry, histLot);
-        }
-
-        if (expiryCandidate || lotCandidate) {
-          setStatus("OCR実行中… 枠付近で1〜2秒静止すると安定します。");
-        } else {
-          setStatus("数字らしいものが見つかりません。距離・明るさ・角度を変えてみてください。", true);
-        }
+        const text = (data.ParsedResults && data.ParsedResults[0] && data.ParsedResults[0].ParsedText) || "";
+        handleText(text);
+        statusText.textContent = (isManual ? "単発OCR完了" : "ライブOCR：待機中…");
       } catch (err) {
-        console.error(err);
-        setStatus("OCRエラー: " + err.message, true);
-      } finally {
-        isRecognizing = false;
+        rawOut.textContent = "【OCRエラー】" + err.message;
+        statusText.textContent = "エラー発生：" + err.message;
       }
     }
 
-    function startLiveOCR() {
-      if (liveTimer) return;
-      liveOCR = true;
-      toggleLiveBtn.textContent = "⏸ ライブOCR：動作中";
-      toggleLiveBtn.classList.remove("btn-secondary");
-      toggleLiveBtn.classList.add("btn-primary");
-      setStatus("ライブOCR動作中。中央付近で1〜2秒静止すると安定します。");
-      liveTimer = setInterval(runOCROnce, 4000); // 4秒ごと（API負荷軽減のため少し長め）
-    }
+    function handleText(text) {
+      rawOut.textContent = text || "-";
 
-    function stopLiveOCR() {
-      liveOCR = false;
-      if (liveTimer) {
-        clearInterval(liveTimer);
-        liveTimer = null;
+      const lines = text.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+
+      // すごくざっくり：日付っぽいもの (2025.12.11 / 25.12.11 / 2025-12-11 等)
+      const dateRegex = /(\d{2,4})[.\-\/年月](\d{1,2})[.\-\/月日](\d{1,2})/;
+      let expiryCandidate = "";
+      for (const line of lines) {
+        const m = line.match(dateRegex);
+        if (m) {
+          expiryCandidate = line;
+          break;
+        }
       }
-      toggleLiveBtn.textContent = "▶ ライブOCR：停止中";
-      toggleLiveBtn.classList.remove("btn-primary");
-      toggleLiveBtn.classList.add("btn-secondary");
-      setStatus("ライブOCRは停止中です。必要なときに再開できます。");
+
+      // LOTっぽいもの：行の中に「LOT」「Lot」「ロット」などが含まれる or 英数字ゴチャっとしたやつ
+      let lotCandidate = "";
+      for (const line of lines) {
+        if (/lot|ロット/i.test(line)) {
+          lotCandidate = line;
+          break;
+        }
+      }
+      if (!lotCandidate) {
+        const alnumLine = lines.find(l => /[A-Z].*\d|\d.*[A-Z]/i.test(l));
+        if (alnumLine) lotCandidate = alnumLine;
+      }
+
+      expiryOut.textContent = expiryCandidate || "未検出";
+      lotOut.textContent = lotCandidate || "未検出";
+
+      addHistory({
+        time: new Date().toLocaleTimeString(),
+        expiry: expiryCandidate,
+        lot: lotCandidate,
+        raw: text.slice(0, 80).replace(/\s+/g, " ")
+      });
     }
 
-    // イベント設定
-    startCamBtn.addEventListener("click", () => {
-      startCamera();
-    });
+    function addHistory(entry) {
+      const li = document.createElement("li");
+      li.innerHTML = `
+        <span class="tag">${entry.time}</span>
+        <span class="tag">賞味: ${entry.expiry || "未"}</span>
+        <span class="tag">ロット: ${entry.lot || "未"}</span>
+        <div style="margin-top:2px; color:#9ca3af;">${entry.raw}</div>
+      `;
+      historyEl.insertBefore(li, historyEl.firstChild);
 
-    toggleLiveBtn.addEventListener("click", () => {
-      if (liveOCR) stopLiveOCR();
-      else startLiveOCR();
-    });
+      // 10件以上なら末尾を削る
+      while (historyEl.children.length > 10) {
+        historyEl.removeChild(historyEl.lastChild);
+      }
+    }
 
-    shotBtn.addEventListener("click", () => {
-      runOCROnce();
+    startBtn.addEventListener("click", startCamera);
+    stopBtn.addEventListener("click", stopCamera);
+    shotBtn.addEventListener("click", () => captureAndOcr(true));
+    clearHistBtn.addEventListener("click", () => {
+      historyEl.innerHTML = "";
     });
-
-    clearHistoryBtn.addEventListener("click", () => {
-      history = [];
-      lastHistoryKey = "";
-      saveHistory();
-      renderHistory();
-    });
-
-    window.addEventListener("beforeunload", () => {
-      if (stream) stream.getTracks().forEach(t => t.stop());
-      if (liveTimer) clearInterval(liveTimer);
-    });
-
-    // 起動時に履歴だけ読み込む
-    loadHistory();
   </script>
 </body>
 </html>
