@@ -140,8 +140,8 @@
 </div>
 
 <div class="card">
-  <h2 style="font-size:1rem; margin-top:0;">履歴（最新10件）</h2>
-  <button id="clearHist" class="secondary" style="padding:4px 10px; font-size:0.75rem;">クリア</button>
+  <h2 style="font-size:1rem; margin-top:0;">履歴（すべて保存）</h2>
+  <button id="clearHist" class="secondary" style="padding:4px 10px; font-size:0.75rem;">全削除</button>
 
   <ul id="history" class="history"></ul>
 </div>
@@ -150,6 +150,7 @@
 
 <script>
   const API_KEY = "K88740512688957";
+  const HISTORY_KEY = "lotOcrHistory_v1";
 
   const video = document.getElementById("video");
   const canvas = document.getElementById("canvas");
@@ -168,6 +169,7 @@
   let stream = null;
   let audioCtx = null;
   let ttsEnabled = true;
+  let historyData = [];
 
   // --- ビープ音（短い「ピ」） ---
   function playBeep() {
@@ -195,24 +197,23 @@
     }
   }
 
-  // --- 数字列だけ抽出して、1桁ずつ読みやすい形にする ---
+  // --- 数字列だけ抽出して、読み上げ用テキストを作る ---
   function extractNumbersForSpeech(text) {
     if (!text) return { display: "", speak: "" };
 
-    // 連続した数字の塊を全部拾う（例: "2025 12 09 LOT123" -> ["2025", "12", "09", "123"]）
+    // 連続した数字の塊を拾う
     const matches = text.match(/\d+/g) || [];
-
     if (matches.length === 0) {
       return { display: "", speak: "" };
     }
 
-    // 画面表示用：そのまま塊ごとをスペース区切り
+    // 画面表示用（/ で区切り・画面だけなのでOK）
     const display = matches.join(" / ");
 
-    // 読み上げ用：各塊を「2 0 2 5」のように1桁ずつ区切って、その塊同士は「／」で区切る
+    // 読み上げ用：各塊を「2 0 2 5」、塊同士は「、」だけ（カンマとしてポーズ扱い、スラッシュ無し）
     const speak = matches
       .map(seq => seq.split("").join(" "))
-      .join(" ／ ");
+      .join(" 、 ");
 
     return { display, speak };
   }
@@ -334,9 +335,7 @@
   function handleText(text) {
     rawOut.textContent = text || "-";
 
-    // 数字列だけ抽出
-    const { display, speak } = extractNumbersForSpeech(text);
-
+    const { display, speak } = extractNumbersForSpeech(text || "");
     numbersOut.textContent = display || "なし";
 
     if (speak) {
@@ -345,15 +344,16 @@
       speakText("数字を読み取れませんでした");
     }
 
-    addHistory({
+    const entry = {
       time: new Date().toLocaleTimeString(),
       numbers: display || "なし",
-      raw: (text || "").slice(0, 80)
-    });
+      raw: (text || "").replace(/\s+/g, " ").slice(0, 120)
+    };
+    addHistory(entry, true);
   }
 
-  // --- 履歴管理 ---
-  function addHistory(e) {
+  // --- 履歴描画 ---
+  function renderHistoryItem(e) {
     const li = document.createElement("li");
     li.innerHTML = `
       <span class="tag">${e.time}</span>
@@ -361,8 +361,45 @@
       <div style="color:#666; margin-top:4px;">${e.raw}</div>
     `;
     historyEl.prepend(li);
-    if (historyEl.children.length > 10) {
-      historyEl.lastChild.remove();
+  }
+
+  // --- 履歴管理（データ＋保存） ---
+  function addHistory(entry, save) {
+    historyData.push(entry);
+    renderHistoryItem(entry);
+    if (save) {
+      try {
+        localStorage.setItem(HISTORY_KEY, JSON.stringify(historyData));
+      } catch (e) {
+        console.warn("履歴保存エラー:", e);
+      }
+    }
+  }
+
+  function loadHistory() {
+    try {
+      const saved = localStorage.getItem(HISTORY_KEY);
+      if (!saved) return;
+      const arr = JSON.parse(saved);
+      if (!Array.isArray(arr)) return;
+      historyData = arr;
+      historyEl.innerHTML = "";
+      // 古いもの→新しいものの順に描画（結果的に最新が一番上）
+      for (const entry of historyData) {
+        renderHistoryItem(entry);
+      }
+    } catch (e) {
+      console.warn("履歴読み込みエラー:", e);
+    }
+  }
+
+  function clearHistoryAll() {
+    historyData = [];
+    historyEl.innerHTML = "";
+    try {
+      localStorage.removeItem(HISTORY_KEY);
+    } catch (e) {
+      console.warn("履歴削除エラー:", e);
     }
   }
 
@@ -370,12 +407,15 @@
   startBtn.addEventListener("click", startCamera);
   stopBtn.addEventListener("click", stopCamera);
   shotBtn.addEventListener("click", captureAndOcr);
-  clearHistBtn.addEventListener("click", () => { historyEl.innerHTML = ""; });
+  clearHistBtn.addEventListener("click", clearHistoryAll);
 
   ttsToggle.addEventListener("click", () => {
     ttsEnabled = !ttsEnabled;
     ttsToggle.textContent = ttsEnabled ? "読み上げ ON" : "読み上げ OFF";
   });
+
+  // ページ読み込み時に履歴復元
+  loadHistory();
 </script>
 
 </body>
