@@ -38,6 +38,7 @@
       color: #02120a;
       font-weight: 600;
       margin-right: 8px;
+      margin-bottom: 4px;
     }
     button.secondary {
       background: #374151;
@@ -92,19 +93,20 @@
 <body>
   <h1>エーオーアイ・賞味ロットライブOCRルーペ（OCR.space版）</h1>
   <p style="font-size:0.85rem; color:#9ca3af; margin-bottom:12px;">
-    枠内付近の印字を数秒ごとに読み取り。上下逆印字にも挑戦し、履歴も保存します。
+    枠付近の印字を数秒ごとに読み取り。認識時にビープ音と音声でフィードバックし、履歴も残します。
   </p>
 
   <div class="card">
     <h2>カメラ Web版</h2>
     <p style="font-size:0.8rem; color:#9ca3af;">
-      中央〜枠あたりに賞味期限とロットを入れてください（上下逆さテストも可）
+      中央〜枠あたりに「賞味期限」と「ロット」を入れてください（上下逆さでもテスト可）。
     </p>
     <video id="video" playsinline autoplay muted></video>
     <div style="margin-top:8px;">
       <button id="startBtn">カメラを開始 / 再接続 ▶</button>
-      <button id="stopBtn" class="secondary" disabled>ライブOCR：停止中</button>
+      <button id="stopBtn" class="secondary" disabled>ライブOCR 停止</button>
       <button id="shotBtn" class="secondary">今だけ再解析</button>
+      <button id="ttsToggle" class="secondary">読み上げ ON</button>
     </div>
     <div class="status" id="statusText">待機中</div>
   </div>
@@ -132,13 +134,16 @@
   <canvas id="canvas" style="display:none;"></canvas>
 
   <script>
-    const API_KEY = "K88740512688957"; // 御園さんの OCR.space API KEY（公開リポジトリなら本当は隠したい）
+    // --- OCR.space API キー ---
+    const API_KEY = "K88740512688957"; // 公開リポジトリなら本来はサーバ側で隠すのが理想
 
+    // --- 要素参照 ---
     const video = document.getElementById("video");
     const canvas = document.getElementById("canvas");
     const startBtn = document.getElementById("startBtn");
     const stopBtn = document.getElementById("stopBtn");
     const shotBtn = document.getElementById("shotBtn");
+    const ttsToggle = document.getElementById("ttsToggle");
     const statusText = document.getElementById("statusText");
     const expiryOut = document.getElementById("expiryOut");
     const lotOut = document.getElementById("lotOut");
@@ -148,7 +153,57 @@
 
     let stream = null;
     let timerId = null;
+    let audioCtx = null;
+    let ttsEnabled = true;
 
+    // --- ビープ音を鳴らす ---
+    function playBeep() {
+      try {
+        if (!audioCtx) {
+          audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        }
+        const ctx = audioCtx;
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+
+        osc.type = "sine";          // 音色：正弦波
+        osc.frequency.value = 1400; // 周波数（高めの「ピッ」）
+        gain.gain.value = 0.2;      // 音量
+
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+
+        const now = ctx.currentTime;
+        osc.start(now);
+        // 0.18秒くらいでフェードアウト
+        gain.gain.setValueAtTime(0.2, now);
+        gain.gain.exponentialRampToValueAtTime(0.001, now + 0.18);
+        osc.stop(now + 0.2);
+      } catch (e) {
+        console.warn("ビープ生成エラー:", e);
+      }
+    }
+
+    // --- 読み上げ（ブラウザTTS） ---
+    function speakText(text) {
+      if (!("speechSynthesis" in window)) {
+        console.warn("speechSynthesis 未対応");
+        return;
+      }
+      if (!text) return;
+
+      // 前の読み上げが残っていたらキャンセル
+      window.speechSynthesis.cancel();
+
+      const u = new SpeechSynthesisUtterance(text);
+      u.lang = "ja-JP";  // 日本語
+      u.rate = 1.05;     // 少し速め
+      u.pitch = 1.0;
+
+      window.speechSynthesis.speak(u);
+    }
+
+    // --- カメラ起動 ---
     async function startCamera() {
       try {
         if (stream) {
@@ -169,6 +224,7 @@
       }
     }
 
+    // --- カメラ停止 ---
     function stopCamera() {
       if (timerId) {
         clearInterval(timerId);
@@ -182,6 +238,7 @@
       statusText.textContent = "ライブOCR：停止中";
     }
 
+    // --- 自動キャプチャ開始（5秒ごと） ---
     function startAutoCapture() {
       if (timerId) clearInterval(timerId);
       timerId = setInterval(() => {
@@ -189,6 +246,7 @@
       }, 5000); // 5秒ごと
     }
 
+    // --- キャプチャしてOCR.spaceへ送信 ---
     async function captureAndOcr(isManual) {
       if (!video.videoWidth || !video.videoHeight) {
         return;
@@ -239,12 +297,13 @@
       }
     }
 
+    // --- 読み取ったテキストの処理 ---
     function handleText(text) {
       rawOut.textContent = text || "-";
 
       const lines = text.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
 
-      // すごくざっくり：日付っぽいもの (2025.12.11 / 25.12.11 / 2025-12-11 等)
+      // ざっくり日付抽出 (2025.12.11 / 25-12-11 / 2025/12/11 / 2025年12月11日 など)
       const dateRegex = /(\d{2,4})[.\-\/年月](\d{1,2})[.\-\/月日](\d{1,2})/;
       let expiryCandidate = "";
       for (const line of lines) {
@@ -255,7 +314,7 @@
         }
       }
 
-      // LOTっぽいもの：行の中に「LOT」「Lot」「ロット」などが含まれる or 英数字ゴチャっとしたやつ
+      // ロット候補：「LOT」「ロット」を含む or 英数字ごちゃっと
       let lotCandidate = "";
       for (const line of lines) {
         if (/lot|ロット/i.test(line)) {
@@ -271,6 +330,33 @@
       expiryOut.textContent = expiryCandidate || "未検出";
       lotOut.textContent = lotCandidate || "未検出";
 
+      // --- 認識が有効そうならビープ＆（必要なら）読み上げ ---
+      const hasUsefulText =
+        (expiryCandidate && expiryCandidate !== "未検出") ||
+        (lotCandidate && lotCandidate !== "未検出") ||
+        lines.length > 0;
+
+      if (hasUsefulText) {
+        // 1) ビープ音（常時）
+        playBeep();
+
+        // 2) 読み上げ内容を決定
+        let summary = "";
+        if (expiryCandidate) {
+          summary = "賞味期限、" + expiryCandidate;
+        } else if (lotCandidate) {
+          summary = "ロット、" + lotCandidate;
+        } else {
+          summary = lines[0] || "";
+        }
+
+        // 読み上げONのときだけ喋る
+        if (summary && ttsEnabled) {
+          speakText("読み取り。" + summary);
+        }
+      }
+
+      // --- 履歴登録 ---
       addHistory({
         time: new Date().toLocaleTimeString(),
         expiry: expiryCandidate,
@@ -279,6 +365,7 @@
       });
     }
 
+    // --- 履歴管理（最新10件） ---
     function addHistory(entry) {
       const li = document.createElement("li");
       li.innerHTML = `
@@ -289,17 +376,23 @@
       `;
       historyEl.insertBefore(li, historyEl.firstChild);
 
-      // 10件以上なら末尾を削る
+      // 10件以上なら末尾を削除
       while (historyEl.children.length > 10) {
         historyEl.removeChild(historyEl.lastChild);
       }
     }
 
+    // --- イベントハンドラ ---
     startBtn.addEventListener("click", startCamera);
     stopBtn.addEventListener("click", stopCamera);
     shotBtn.addEventListener("click", () => captureAndOcr(true));
     clearHistBtn.addEventListener("click", () => {
       historyEl.innerHTML = "";
+    });
+
+    ttsToggle.addEventListener("click", () => {
+      ttsEnabled = !ttsEnabled;
+      ttsToggle.textContent = ttsEnabled ? "読み上げ ON" : "読み上げ OFF";
     });
   </script>
 </body>
