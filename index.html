@@ -189,18 +189,17 @@
       .split("")
       .map(ch => {
         if (/[A-Za-z]/.test(ch)) {
-          return ch.toUpperCase(); // アルファベットは大文字に統一
+          return ch.toUpperCase(); // アルファベットは大文字
         } else if (/[0-9]/.test(ch)) {
           return ch;               // 数字はそのまま
         }
-        return ch;                 // その他（日本語等）はそのまま
+        return ch;                 // 日本語などはそのまま
       })
       .join(" ");
   }
 
   // --- 読み上げ ---
   function speakText(text) {
-    if (!ttsEnabled) return;
     if (!("speechSynthesis" in window)) return;
     if (!text) return;
 
@@ -226,7 +225,7 @@
       video.srcObject = stream;
       await video.play();
 
-      statusText.textContent = "カメラ起動中（狙って「読み取り」ボタンを押してください）";
+      statusText.textContent = "カメラ起動中（狙って「読み取り」を押してください）";
       stopBtn.disabled = false;
     } catch (err) {
       statusText.textContent = "カメラエラー：" + err.message;
@@ -291,7 +290,7 @@
 
     const lines = text.split("\n").map(v => v.trim()).filter(Boolean);
 
-    // とりあえず「日付っぽい行」を賞味期限候補に
+    // 日付っぽい行を賞味期限候補に
     const dateRegex = /(\d{2,4})[.\-\/年月](\d{1,2})[.\-\/月日](\d{1,2})/;
     let expiry = lines.find(l => dateRegex.test(l)) || "未検出";
 
@@ -305,13 +304,25 @@
     expiryOut.textContent = expiry;
     lotOut.textContent = lot;
 
-    // --- フィードバック音 & 読み上げ ---
+    // --- 結果確定時のビープ（2回目の「ピ」） ---
     playBeep();
 
-    const summary = expiry !== "未検出" ? expiry : lot;
-    if (summary && ttsEnabled) {
-      const spoken = spellOut(summary);
-      speakText("読み取り。" + spoken);
+    // 読み上げ内容を決定（未検出は日本語を読ませない）
+    let summary = "";
+    if (expiry !== "未検出") {
+      summary = expiry;
+    } else if (lot !== "未検出") {
+      summary = lot;
+    }
+
+    if (ttsEnabled) {
+      if (summary) {
+        const spoken = spellOut(summary);
+        speakText("読み取り。" + spoken);
+      } else {
+        // どちらも未検出のときは英語で短く
+        speakText("Not detected");
+      }
     }
 
     // --- 履歴 ---
@@ -341,7 +352,13 @@
   // --- イベント設定 ---
   startBtn.addEventListener("click", startCamera);
   stopBtn.addEventListener("click", stopCamera);
-  shotBtn.addEventListener("click", captureAndOcr);
+
+  // ボタン押した瞬間に「ピ」、そのあとOCR → 結果でもう一回「ピ」
+  shotBtn.addEventListener("click", () => {
+    playBeep();       // 1回目：シャッター的な「ピ」
+    captureAndOcr();  // 処理完了時に handleText 内でもう一度「ピ」
+  });
+
   clearHistBtn.addEventListener("click", () => { historyEl.innerHTML = ""; });
 
   ttsToggle.addEventListener("click", () => {
