@@ -61,14 +61,20 @@
 
     .output {
       min-height: 1.6em;
-      padding: 6px 8px;
+      padding: 8px 10px;
       border-radius: 6px;
       background: #fafafa;
       border: 1px solid #ddd;
       font-family: monospace;
-      font-size: 0.85rem;
+      font-size: 0.9rem;
       white-space: pre-wrap;
       word-break: break-all;
+    }
+
+    /* 生テキストは少し大きめ＆高さも確保 */
+    #rawOut {
+      font-size: 1.0rem;
+      min-height: 4em;
     }
 
     .status {
@@ -105,7 +111,7 @@
 
 <h1>賞味・ロット OCR ルーペ</h1>
 <p style="font-size:0.8rem; color:#777; margin:4px 0 10px;">
-  カメラで印字に狙いを合わせて、「読み取り」を押した瞬間だけOCRします。
+  カメラで印字に狙いを合わせて、「読み取り」を押した瞬間だけOCRします。数字だけ音声で読み上げます。
 </p>
 
 <div class="card">
@@ -126,14 +132,11 @@
 <div class="card">
   <h2 style="font-size:1rem; margin-top:0;">読み取り結果</h2>
 
-  <div class="label">賞味期限候補</div>
-  <div id="expiryOut" class="output">未読み取り</div>
-
-  <div class="label" style="margin-top:10px;">ロット候補</div>
-  <div id="lotOut" class="output">未読み取り</div>
-
-  <div class="label" style="margin-top:10px;">生テキスト</div>
+  <div class="label" style="font-size:0.8rem; color:#555;">生テキスト（OCR結果）</div>
   <div id="rawOut" class="output">-</div>
+
+  <div class="label" style="font-size:0.8rem; color:#555; margin-top:10px;">検出された数字列（読み上げ対象）</div>
+  <div id="numbersOut" class="output">なし</div>
 </div>
 
 <div class="card">
@@ -157,9 +160,8 @@
   const ttsToggle = document.getElementById("ttsToggle");
 
   const statusText = document.getElementById("statusText");
-  const expiryOut = document.getElementById("expiryOut");
-  const lotOut = document.getElementById("lotOut");
   const rawOut = document.getElementById("rawOut");
+  const numbersOut = document.getElementById("numbersOut");
   const historyEl = document.getElementById("history");
   const clearHistBtn = document.getElementById("clearHist");
 
@@ -193,16 +195,26 @@
     }
   }
 
-  // --- 英数字は1文字ずつスペルアウト ---
-  function spellOut(text) {
-    if (!text) return text;
-    return text
-      .split("")
-      .map(ch => {
-        if (/[A-Za-z]/.test(ch)) return ch.toUpperCase();
-        return ch;
-      })
-      .join(" ");
+  // --- 数字列だけ抽出して、1桁ずつ読みやすい形にする ---
+  function extractNumbersForSpeech(text) {
+    if (!text) return { display: "", speak: "" };
+
+    // 連続した数字の塊を全部拾う（例: "2025 12 09 LOT123" -> ["2025", "12", "09", "123"]）
+    const matches = text.match(/\d+/g) || [];
+
+    if (matches.length === 0) {
+      return { display: "", speak: "" };
+    }
+
+    // 画面表示用：そのまま塊ごとをスペース区切り
+    const display = matches.join(" / ");
+
+    // 読み上げ用：各塊を「2 0 2 5」のように1桁ずつ区切って、その塊同士は「／」で区切る
+    const speak = matches
+      .map(seq => seq.split("").join(" "))
+      .join(" ／ ");
+
+    return { display, speak };
   }
 
   // --- 読み上げ ---
@@ -312,10 +324,9 @@
 
     } catch (e) {
       rawOut.textContent = "OCRエラー：" + e.message;
+      numbersOut.textContent = "なし";
       statusText.textContent = "エラーが発生しました";
-      if (ttsEnabled) {
-        speakText("エラーが発生しました");
-      }
+      speakText("エラーが発生しました");
     }
   }
 
@@ -323,33 +334,21 @@
   function handleText(text) {
     rawOut.textContent = text || "-";
 
-    const lines = text.split("\n").map(l => l.trim()).filter(Boolean);
+    // 数字列だけ抽出
+    const { display, speak } = extractNumbersForSpeech(text);
 
-    const dateRegex = /(\d{2,4})[.\-\/年月](\d{1,2})[.\-\/月日](\d{1,2})/;
+    numbersOut.textContent = display || "なし";
 
-    let expiry = lines.find(l => dateRegex.test(l)) || null;
-    let lot =
-      lines.find(l => /lot|ロット/i.test(l)) ||
-      lines.find(l => /[A-Za-z].*\d|\d.*[A-Za-z]/.test(l)) ||
-      null;
-
-    expiryOut.textContent = expiry || "未検出";
-    lotOut.textContent = lot || "未検出";
-
-    // 読み上げ：未検出のときは日本語で
-    if (expiry) {
-      speakText("読み取り。 " + spellOut(expiry));
-    } else if (lot) {
-      speakText("読み取り。 " + spellOut(lot));
+    if (speak) {
+      speakText("読み取り。" + speak);
     } else {
-      speakText("読み取りできませんでした");
+      speakText("数字を読み取れませんでした");
     }
 
     addHistory({
       time: new Date().toLocaleTimeString(),
-      expiry: expiry || "未検出",
-      lot: lot || "未検出",
-      raw: text.slice(0, 60)
+      numbers: display || "なし",
+      raw: (text || "").slice(0, 80)
     });
   }
 
@@ -358,8 +357,7 @@
     const li = document.createElement("li");
     li.innerHTML = `
       <span class="tag">${e.time}</span>
-      <span class="tag">賞味: ${e.expiry}</span>
-      <span class="tag">ロット: ${e.lot}</span>
+      <span class="tag">数字: ${e.numbers}</span>
       <div style="color:#666; margin-top:4px;">${e.raw}</div>
     `;
     historyEl.prepend(li);
